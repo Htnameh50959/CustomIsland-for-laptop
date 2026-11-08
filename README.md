@@ -2,7 +2,7 @@
 
 An iOS-style Dynamic Island for the GNOME top bar.
 
-- **Idle**: a small empty black pill floating just below the top bar (the bar keeps its own clock).
+- **Idle**: hidden. The pill shrinks away when nothing is happening and springs open below the top bar when music plays, a notification arrives, volume/brightness changes or the charger is plugged in. Set `HIDE_WHEN_IDLE: false` to keep a small empty pill instead.
 - **Media**: album art and an animated equalizer for whatever is playing (any MPRIS player: Spotify, browsers, VLC…). Hover to expand into a full player with controls.
 - **Activities**: volume/brightness changes, notifications and charging appear as island pop-outs.
 

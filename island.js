@@ -37,6 +37,7 @@ export const CONFIG = {
     TOP_GAP: 6,                   // px between the top bar (or screen top) and the pill
     PILL_HEIGHT: 32,              // pill height when it floats under the top bar
     IDLE_WIDTH: 120,              // empty idle pill width (below-panel mode)
+    HIDE_WHEN_IDLE: true,         // below-panel mode: vanish when there's nothing to show
     MAX_RADIUS: 30,
     EXPANDED_WIDTH: 400,
     NOTIF_WIDTH: 380,
@@ -400,11 +401,32 @@ class Island extends St.Widget {
 
     _render() {
         const kind = this._desiredView();
+        const hide = CONFIG.HIDE_WHEN_IDLE && CONFIG.BELOW_PANEL && kind === 'idle';
         if (kind !== this._current)
             this._switchView(kind);
-        const [w, h] = this._sizeOf(kind);
+        // hidden = shrink to a dot and fade out; it springs back open from there
+        const [w, h] = hide ? [2, 2] : this._sizeOf(kind);
+        this._setShown(!hide);
         this._morphTo(w, h);
         this._updateLoops();
+    }
+
+    _setShown(on) {
+        if (this._shown === on)
+            return;
+        const first = this._shown === undefined;
+        this._shown = on;
+        this.reactive = on; // no hover/clicks on the hidden dot
+        this.remove_transition('opacity');
+        if (first) {
+            this.opacity = on ? 255 : 0;
+            return;
+        }
+        this.ease({
+            opacity: on ? 255 : 0,
+            duration: on ? 120 : 360,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
     }
 
     _switchView(kind) {
