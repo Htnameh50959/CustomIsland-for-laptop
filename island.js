@@ -24,20 +24,31 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {MprisWatcher} from './mpris.js';
 
 // ---------------------------------------------------------------- settings --
+// Defaults only: extension.js fills these from GSettings (see keys.js / prefs.js).
 export const CONFIG = {
     SUPPRESS_GNOME_OSD: true,     // show volume/brightness only in the island
     SUPPRESS_GNOME_BANNERS: true, // show notifications only in the island
+    NOTIF_SHOW_LOW_URGENCY: true, // also show apps' "low priority" notifications
+    NOTIF_QUEUE_MAX: 20,          // notifications waiting their turn
+    NOTIF_RESPECT_DND: true,      // Do Not Disturb holds back non-critical ones
+    NOTIF_RESPECT_APP_SETTINGS: false, // honour per-app "pop-ups off" in Settings
+    SHOW_CHARGING: true,
     HOVER_EXPAND_MS: 180,
     HOVER_COLLAPSE_MS: 380,
     OSD_MS: 1600,
     NOTIF_MS: 4500,
     CHARGE_MS: 3000,
     SPRING_MS: 620,
-    BELOW_PANEL: true,            // float under the top bar instead of inside it
+    // 'below'         – float under the top bar, centred
+    // 'beside-clock'  – inside the top bar, next to the date & time
+    // 'replace-clock' – inside the top bar, in place of the date & time
+    POSITION: 'below',
+    CLOCK_SIDE: 'right',          // beside-clock: 'left' or 'right' of the date & time
+    BESIDE_GAP: 8,                // beside-clock: px between the date & time and the pill
     TOP_GAP: 6,                   // px between the top bar (or screen top) and the pill
     PILL_HEIGHT: 32,              // pill height when it floats under the top bar
-    IDLE_WIDTH: 120,              // empty idle pill width (below-panel mode)
-    HIDE_WHEN_IDLE: true,         // below-panel mode: vanish when there's nothing to show
+    IDLE_WIDTH: 120,              // empty idle pill width (when the idle pill shows no clock)
+    HIDE_WHEN_IDLE: true,         // vanish when there's nothing to show (not in replace-clock)
     MAX_RADIUS: 30,
     EXPANDED_WIDTH: 400,
     NOTIF_WIDTH: 380,
@@ -142,7 +153,10 @@ class Island extends St.Widget {
         });
 
         this._cacheDir = cacheDir;
-        this._H = CONFIG.BELOW_PANEL
+        this._below = CONFIG.POSITION !== 'beside-clock' && CONFIG.POSITION !== 'replace-clock';
+        this._beside = CONFIG.POSITION === 'beside-clock';
+        this._replace = CONFIG.POSITION === 'replace-clock';
+        this._H = this._below
             ? CONFIG.PILL_HEIGHT
             : Math.max(24, (Main.panel.height || 32) - 2 * CONFIG.TOP_GAP);
         this._ids = new Set();
@@ -151,10 +165,13 @@ class Island extends St.Widget {
         this._player = null;
         this._expanded = false;
         this._activity = null;
+        this._notifQueue = [];
         this._artUrl = null;
         this._cancellable = new Gio.Cancellable();
         this._soup = new Soup.Session({timeout: 10});
         this._ifaceSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+        // 'show-banners' here is the global switch that Do Not Disturb turns off
+        this._notifSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
 
         this._views = {
             idle: this._buildIdle(),
@@ -177,10 +194,15 @@ class Island extends St.Widget {
         this._updateClock();
 
         // the real clock stays in the panel (so its calendar menu still
-        // anchors there); inside-panel mode hides it under the island
+        // anchors there); replace-clock hides it under the island
         this._dateMenu = Main.panel.statusArea.dateMenu;
-        if (!CONFIG.BELOW_PANEL)
+        if (this._replace)
             this._dateMenu.container.opacity = 0;
+        // beside-clock follows the clock as its width changes (e.g. 9:59 → 10:00)
+        if (this._beside) {
+            this._dateMenu.container.connectObject('notify::allocation',
+                () => this._queueRelayout(), this);
+        }
         this._dateMenu.container.connectObject('destroy', () => (this._dateMenu = null), this);
         this._dateMenu.menu.connectObject('open-state-changed', (_m, open) => {
             if (open)
@@ -250,7 +272,7 @@ class Island extends St.Widget {
         const v = new St.BoxLayout({style_class: 'ci-view', height: this._H, style: 'padding: 0 18px;'});
         this._idleClock = this._label('ci-clock');
         v.add_child(this._idleClock);
-        if (CONFIG.BELOW_PANEL) {
+        if (!this._replace) {
             // the panel already shows the time: idle is an empty pill, like iPhone
             this._idleClock.hide();
             v.width = CONFIG.IDLE_WIDTH;
@@ -267,6 +289,13 @@ class Island extends St.Widget {
         v.add_child(this._artSmall);
         v.add_child(this._compactClock);
         v.add_child(this._barsSmall.actor);
+        if (this._beside) {
+            // the date & time is right next to the pill: don't show it twice
+            this._compactClock.hide();
+            v.width = Math.max(H * 3, 96);
+            this._artSmall.x_expand = true;
+            this._artSmall.x_align = Clutter.ActorAlign.START;
+        }
         return v;
     }
 
@@ -401,7 +430,7 @@ class Island extends St.Widget {
 
     _render() {
         const kind = this._desiredView();
-        const hide = CONFIG.HIDE_WHEN_IDLE && CONFIG.BELOW_PANEL && kind === 'idle';
+        const hide = CONFIG.HIDE_WHEN_IDLE && !this._replace && kind === 'idle';
         if (kind !== this._current)
             this._switchView(kind);
         // hidden = shrink to a dot and fade out; it springs back open from there
@@ -492,12 +521,45 @@ class Island extends St.Widget {
         this.set_style(`border-radius: ${Math.round(Math.min(h / 2, CONFIG.MAX_RADIUS))}px;`);
         const mon = Main.layoutManager.primaryMonitor;
         if (mon)
-            this.set_position(Math.round(mon.x + (mon.width - w) / 2), this._top(mon));
+            this.set_position(this._left(mon, w), this._top(mon));
         this._layoutViews();
     }
 
+    // re-place without resizing (clock moved, or side/gap setting changed)
+    relayout() {
+        if (this.width)
+            this._applySize(this.width, this.height);
+    }
+
+    _queueRelayout() {
+        if (this._relayoutId)
+            return;
+        // not from inside the panel's allocation pass
+        this._relayoutId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._relayoutId = 0;
+            this.relayout();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _left(mon, w) {
+        const centred = Math.round(mon.x + (mon.width - w) / 2);
+        const clock = this._dateMenu?.container;
+        if (!this._beside || !clock?.mapped)
+            return centred;
+        const [cx] = clock.get_transformed_position();
+        const [cw] = clock.get_transformed_size();
+        if (!cw)
+            return centred;
+        // grow outward from the clock's edge
+        const x = CONFIG.CLOCK_SIDE === 'left'
+            ? cx - CONFIG.BESIDE_GAP - w
+            : cx + cw + CONFIG.BESIDE_GAP;
+        return Math.round(Math.max(mon.x, Math.min(x, mon.x + mon.width - w)));
+    }
+
     _top(mon) {
-        const panel = CONFIG.BELOW_PANEL ? (Main.panel.height || 0) : 0;
+        const panel = this._below ? (Main.panel.height || 0) : 0;
         return mon.y + panel + CONFIG.TOP_GAP;
     }
 
@@ -523,6 +585,8 @@ class Island extends St.Widget {
     }
 
     _showActivity(kind, ms) {
+        if (kind !== 'notif' && this._activity?.kind === 'notif' && this._notification)
+            this._queueNotification(this._notification, true); // show it again afterwards
         this._activityTimer = this._cancel(this._activityTimer);
         this._activity = {kind};
         const expire = () => {
@@ -535,6 +599,7 @@ class Island extends St.Widget {
             this._activity = null;
             this._notification = null;
             this._render();
+            this._nextNotification();
         };
         this._activityTimer = this._after(ms, expire);
         this._render();
@@ -545,6 +610,7 @@ class Island extends St.Widget {
         this._activity = null;
         this._notification = null;
         this._render();
+        this._nextNotification();
     }
 
     // equalizer + progress loops only run while visible & playing
@@ -805,18 +871,77 @@ class Island extends St.Widget {
         };
         tray.getSources().forEach(watch);
         tray.connectObject('source-added', (_t, s) => watch(s), this);
-        if (CONFIG.SUPPRESS_GNOME_BANNERS)
+        // show what queued up while a fullscreen app was in front
+        global.display.connectObject('in-fullscreen-changed', () => this._nextNotification(), this);
+        if (CONFIG.SUPPRESS_GNOME_BANNERS) {
+            this._bannersSuppressed = true;
             tray.bannerBlocked = true;
+            // GNOME resets bannerBlocked to false whenever a top-bar menu (e.g. the
+            // clock/calendar) closes, which brings its banners back. Pin it to true
+            // on this instance while the island is running; removed in _onDestroy.
+            Object.defineProperty(tray, 'bannerBlocked', {
+                configurable: true,
+                get: () => true,
+                set: () => {},
+            });
+        }
     }
 
     _onNotification(n) {
-        if (n.acknowledged || n.urgency === Urgency.LOW)
+        if (n.acknowledged)
             return;
-        if (!n.source?.policy?.showBanners && n.urgency !== Urgency.CRITICAL)
+        if (n.urgency === Urgency.LOW && !CONFIG.NOTIF_SHOW_LOW_URGENCY)
             return;
-        if (Main.layoutManager.primaryMonitor?.inFullscreen && n.urgency !== Urgency.CRITICAL)
-            return;
+        if (n.urgency !== Urgency.CRITICAL) {
+            // 'show-banners' is the global switch that Do Not Disturb turns off
+            if (CONFIG.NOTIF_RESPECT_DND && !this._notifSettings.get_boolean('show-banners'))
+                return;
+            if (CONFIG.NOTIF_RESPECT_APP_SETTINGS && !n.source?.policy?.showBanners)
+                return;
+        }
 
+        // one is already on screen, or the island is hidden by a fullscreen app:
+        // wait in line instead of replacing it / expiring unseen
+        const busy = this._activity?.kind === 'notif' && this._notification && this._notification !== n;
+        if (busy || (this._isFullscreen() && n.urgency !== Urgency.CRITICAL)) {
+            this._queueNotification(n, false);
+            return;
+        }
+        this._presentNotification(n);
+    }
+
+    _isFullscreen() {
+        return !!Main.layoutManager.primaryMonitor?.inFullscreen;
+    }
+
+    _queueNotification(n, front) {
+        if (this._notifQueue.includes(n))
+            return;
+        if (front)
+            this._notifQueue.unshift(n);
+        else
+            this._notifQueue.push(n);
+        n.connectObject('destroy', () => {
+            this._notifQueue = this._notifQueue.filter(q => q !== n);
+        }, this);
+        while (this._notifQueue.length > CONFIG.NOTIF_QUEUE_MAX)
+            this._notifQueue.shift().disconnectObject?.(this);
+    }
+
+    _nextNotification() {
+        if (this._activity || this._isFullscreen())
+            return;
+        while (this._notifQueue.length) {
+            const n = this._notifQueue.shift();
+            n.disconnectObject?.(this);
+            if (!n.acknowledged && n.source) {
+                this._presentNotification(n);
+                return;
+            }
+        }
+    }
+
+    _presentNotification(n) {
         const strip = s => (s ?? '').replace(/<[^>]*>/g, '').replace(/\s*\n\s*/g, ' ').trim();
         this._notifIcon.gicon = n.gicon ?? n.source?.icon ?? themed('preferences-system-notifications-symbolic');
         this._notifApp.text = (n.source?.title ?? '').toUpperCase();
@@ -825,6 +950,11 @@ class Island extends St.Widget {
         this._notifBody.text = strip(n.body);
         this._notifBody.visible = !!this._notifBody.text;
         this._notification = n;
+        // the app may close it while it's on screen; forget it so a click can't touch a dead object
+        n.connectObject('destroy', () => {
+            if (this._notification === n)
+                this._notification = null;
+        }, this);
         this._showActivity('notif', CONFIG.NOTIF_MS);
     }
 
@@ -851,7 +981,7 @@ class Island extends St.Widget {
                     const pct = Math.round(get('Percentage') ?? 0);
                     const wasOnBattery = lastState === 2 || lastState === 6;
                     lastState = state;
-                    if (!wasOnBattery || (state !== 1 && state !== 4))
+                    if (!wasOnBattery || (state !== 1 && state !== 4) || !CONFIG.SHOW_CHARGING)
                         return;
                     this._chargeText.text = state === 4 ? 'Fully charged' : 'Charging';
                     this._chargePercent.text = `${pct}%`;
@@ -870,6 +1000,8 @@ class Island extends St.Widget {
             GLib.source_remove(this._tickId);
         if (this._posId)
             GLib.source_remove(this._posId);
+        if (this._relayoutId)
+            GLib.source_remove(this._relayoutId);
         this._timeline?.stop();
         this._timeline = null;
         this._mpris?.destroy();
@@ -878,9 +1010,10 @@ class Island extends St.Widget {
         for (const name of this._osdPatched)
             delete this._osdMgr[name]; // falls back to the prototype method
 
-        if (CONFIG.SUPPRESS_GNOME_BANNERS) {
+        if (this._bannersSuppressed) {
             // drop banners queued while blocked so they don't all pop up now
             const tray = Main.messageTray;
+            delete tray.bannerBlocked; // back to GNOME's own getter/setter
             if (Array.isArray(tray._notificationQueue))
                 tray._notificationQueue = [];
             tray.bannerBlocked = false;

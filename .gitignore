@@ -1,0 +1,5 @@
+# built locally by glib-compile-schemas
+schemas/gschemas.compiled
+# gnome-extensions pack output
+*.shell-extension.zip
+*.zip

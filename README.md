@@ -1,31 +1,63 @@
 # Custom Island
 
-An iOS-style Dynamic Island for the GNOME top bar.
+An iOS-style Dynamic Island for the GNOME Shell top bar.
 
-- **Idle**: hidden. The pill shrinks away when nothing is happening and springs open below the top bar when music plays, a notification arrives, volume/brightness changes or the charger is plugged in. Set `HIDE_WHEN_IDLE: false` to keep a small empty pill instead.
-- **Media**: album art and an animated equalizer for whatever is playing (any MPRIS player: Spotify, browsers, VLC…). Hover to expand into a full player with controls.
-- **Activities**: volume/brightness changes, notifications and charging appear as island pop-outs.
+- **Media**: album art, live equalizer, and a full player on hover (title, artist, progress bar, controls). Works with any MPRIS player: Spotify, browsers, VLC and others.
+- **Notifications**: incoming notifications appear in the island, optionally replacing GNOME's own pop-ups. Respects Do Not Disturb.
+- **Volume and brightness**: shown in the island instead of GNOME's on-screen pop-up.
+- **Charging**: a short message when you plug in the charger.
+- **Clock**: click the idle island to open the calendar, like the normal clock.
 
-Supports GNOME Shell 46, 47 and 48.
+## Where it sits
+
+Choose under **Settings → Look → Position**:
+
+| Position | What it does |
+|---|---|
+| Float below the top bar | A floating pill centred under the bar. It hides when there's nothing to show. |
+| Next to the date and time | Inside the top bar, to the left or right of the clock. |
+| In place of the date and time | Inside the top bar, covering the clock. |
+
+Size, corner roundness, animation speed, hover delays and how long each activity stays on screen can all be changed in the settings window.
+
+## Requirements
+
+GNOME Shell 46, 47 or 48.
 
 ## Install
-    git clone <this repo> CustomIsland
-    cd CustomIsland
-    ./install.sh
 
-Then log out and back in (Wayland), or press `Alt+F2`, type `r`, Enter (X11).
+```sh
+git clone https://github.com/<you>/custom-island.git
+cd custom-island
+./install.sh
+```
 
-To turn it off: `gnome-extensions disable custom-island@hemanth`
+Then log out and back in (Wayland), or press `Alt+F2`, type `r` and press Enter (X11).
+
+Open the settings with `gnome-extensions prefs custom-island@hemanth`. To turn the extension off, run `gnome-extensions disable custom-island@hemanth`.
+
+## Build a zip
+
+```sh
+gnome-extensions pack --force \
+  --extra-source=island.js --extra-source=keys.js --extra-source=mpris.js
+```
+
+This creates `custom-island@hemanth.shell-extension.zip`. Install it with `gnome-extensions install`, or upload it to extensions.gnome.org.
 
 ## Files
-| File | Role |
-|---|---|
-| `extension.js` | Entry point: adds/removes the island on enable/disable |
-| `island.js` | The island widget, layouts, animations and activities |
-| `mpris.js` | Media player tracking over D-Bus (MPRIS) |
-| `stylesheet.css` | Styling |
-| `metadata.json` | Extension name, UUID and supported shell versions |
 
-## Settings
-Edit `CONFIG` at the top of `island.js`, then run `./install.sh` and log out/in.
-Set `BELOW_PANEL: false` to put the pill inside the top bar instead (it then replaces the clock).
+| File | Purpose |
+|---|---|
+| `extension.js` | Enables and disables the extension and rebuilds the island when layout settings change |
+| `island.js` | The island: views, spring animation, media, notifications, OSD, charging |
+| `mpris.js` | Watches media players on the session bus |
+| `keys.js` | Maps the GSettings keys used by the extension and the settings window |
+| `prefs.js` | Settings window |
+| `schemas/` | GSettings schema |
+| `stylesheet.css` | Styles |
+| `install.sh` | Copies the extension into `~/.local/share/gnome-shell/extensions` and enables it |
+
+## License
+
+GPL-2.0-or-later. See [LICENSE](LICENSE).

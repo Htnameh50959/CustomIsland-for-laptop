@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.custom-island" path="/org/gnome/shell/extensions/custom-island/">
+    <!-- look & position -->
+    <key name="position" type="s">
+      <choices>
+        <choice value="below"/>
+        <choice value="beside-clock"/>
+        <choice value="replace-clock"/>
+      </choices>
+      <default>'below'</default>
+      <summary>Where the island sits: below the top bar, next to the date and time, or in place of the clock</summary></key>
+    <key name="clock-side" type="s">
+      <choices>
+        <choice value="right"/>
+        <choice value="left"/>
+      </choices>
+      <default>'right'</default>
+      <summary>Which side of the date and time the island sits on (beside-clock position)</summary></key>
+    <key name="beside-gap" type="i"><range min="0" max="40"/><default>8</default>
+      <summary>Space between the date and time and the island, in pixels (beside-clock position)</summary></key>
+    <!-- replaced by "position"; read once to carry an old setting over -->
+    <key name="below-panel" type="b"><default>true</default>
+      <summary>Deprecated: use position</summary></key>
+    <key name="hide-when-idle" type="b"><default>true</default>
+      <summary>Hide the island when there is nothing to show (below / beside-clock positions)</summary></key>
+    <key name="top-gap" type="i"><range min="0" max="40"/><default>6</default>
+      <summary>Gap above the island, in pixels</summary></key>
+    <key name="pill-height" type="i"><range min="22" max="56"/><default>32</default>
+      <summary>Island height when floating below the top bar, in pixels</summary></key>
+    <key name="idle-width" type="i"><range min="60" max="320"/><default>120</default>
+      <summary>Width of the empty/idle island</summary></key>
+    <key name="expanded-width" type="i"><range min="300" max="640"/><default>400</default>
+      <summary>Width of the expanded media player</summary></key>
+    <key name="notif-width" type="i"><range min="260" max="640"/><default>380</default>
+      <summary>Width of a notification</summary></key>
+    <key name="max-radius" type="i"><range min="0" max="40"/><default>30</default>
+      <summary>Corner roundness</summary></key>
+    <key name="spring-ms" type="i"><range min="150" max="1500"/><default>620</default>
+      <summary>Animation length, in milliseconds</summary></key>
+    <key name="hover-expand-ms" type="i"><range min="0" max="2000"/><default>180</default>
+      <summary>Hover time before the player expands</summary></key>
+    <key name="hover-collapse-ms" type="i"><range min="0" max="3000"/><default>380</default>
+      <summary>Time before the player collapses after the pointer leaves</summary></key>
+
+    <!-- notifications -->
+    <key name="suppress-gnome-banners" type="b"><default>true</default>
+      <summary>Show notifications only in the island (hide GNOME's pop-ups)</summary></key>
+    <key name="notif-ms" type="i"><range min="1000" max="30000"/><default>4500</default>
+      <summary>How long each notification stays, in milliseconds</summary></key>
+    <key name="notif-queue-max" type="i"><range min="1" max="100"/><default>20</default>
+      <summary>Notifications that can wait their turn</summary></key>
+    <key name="notif-show-low-urgency" type="b"><default>true</default>
+      <summary>Also show low-priority notifications</summary></key>
+    <key name="notif-respect-dnd" type="b"><default>true</default>
+      <summary>Hide notifications while Do Not Disturb is on</summary></key>
+    <key name="notif-respect-app-settings" type="b"><default>false</default>
+      <summary>Hide notifications from apps whose pop-ups are turned off in Settings</summary></key>
+
+    <!-- volume / brightness / charging -->
+    <key name="suppress-gnome-osd" type="b"><default>true</default>
+      <summary>Show volume and brightness in the island (hide GNOME's pop-up)</summary></key>
+    <key name="osd-ms" type="i"><range min="500" max="10000"/><default>1600</default>
+      <summary>How long volume/brightness stays, in milliseconds</summary></key>
+    <key name="show-charging" type="b"><default>true</default>
+      <summary>Show when the charger is plugged in</summary></key>
+    <key name="charge-ms" type="i"><range min="500" max="15000"/><default>3000</default>
+      <summary>How long the charging message stays, in milliseconds</summary></key>
+  </schema>
+</schemalist>
