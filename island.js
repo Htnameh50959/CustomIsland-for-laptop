@@ -29,7 +29,7 @@ export const CONFIG = {
     SUPPRESS_GNOME_OSD: true,     // show volume/brightness only in the island
     SUPPRESS_GNOME_BANNERS: true, // show notifications only in the island
     NOTIF_SHOW_LOW_URGENCY: true, // also show apps' "low priority" notifications
-    NOTIF_QUEUE_MAX: 20,          // notifications waiting their turn
+    NOTIF_QUEUE_MAX: 20,          // held back while a fullscreen app is in front
     NOTIF_RESPECT_DND: true,      // Do Not Disturb holds back non-critical ones
     NOTIF_RESPECT_APP_SETTINGS: false, // honour per-app "pop-ups off" in Settings
     SHOW_CHARGING: true,
@@ -166,6 +166,7 @@ class Island extends St.Widget {
         this._expanded = false;
         this._activity = null;
         this._notifQueue = [];
+        this._burst = 0; // notifications in the current run, shown as "· 3 NEW"
         this._artUrl = null;
         this._cancellable = new Gio.Cancellable();
         this._soup = new Soup.Session({timeout: 10});
@@ -586,7 +587,7 @@ class Island extends St.Widget {
 
     _showActivity(kind, ms) {
         if (kind !== 'notif' && this._activity?.kind === 'notif' && this._notification)
-            this._queueNotification(this._notification, true); // show it again afterwards
+            this._queueNotification(this._notification); // show it again afterwards
         this._activityTimer = this._cancel(this._activityTimer);
         this._activity = {kind};
         const expire = () => {
@@ -900,27 +901,26 @@ class Island extends St.Widget {
                 return;
         }
 
-        // one is already on screen, or the island is hidden by a fullscreen app:
-        // wait in line instead of replacing it / expiring unseen
-        const busy = this._activity?.kind === 'notif' && this._notification && this._notification !== n;
-        if (busy || (this._isFullscreen() && n.urgency !== Urgency.CRITICAL)) {
-            this._queueNotification(n, false);
+        // hidden by a fullscreen app: hold it until the island is visible again
+        if (this._isFullscreen() && n.urgency !== Urgency.CRITICAL) {
+            this._queueNotification(n);
             return;
         }
-        this._presentNotification(n);
+        // Like iOS, the newest notification always takes over at once. The one
+        // it replaces is still in GNOME's notification list (the clock menu).
+        const replacing = this._activity?.kind === 'notif' && !!this._notification && this._notification !== n;
+        this._burst = replacing ? this._burst + 1 : 1;
+        this._presentNotification(n, replacing);
     }
 
     _isFullscreen() {
         return !!Main.layoutManager.primaryMonitor?.inFullscreen;
     }
 
-    _queueNotification(n, front) {
+    _queueNotification(n) {
         if (this._notifQueue.includes(n))
             return;
-        if (front)
-            this._notifQueue.unshift(n);
-        else
-            this._notifQueue.push(n);
+        this._notifQueue.push(n);
         n.connectObject('destroy', () => {
             this._notifQueue = this._notifQueue.filter(q => q !== n);
         }, this);
@@ -928,27 +928,54 @@ class Island extends St.Widget {
             this._notifQueue.shift().disconnectObject?.(this);
     }
 
+    // Show only the newest of what was held back; the count says how many came.
     _nextNotification() {
         if (this._activity || this._isFullscreen())
             return;
-        while (this._notifQueue.length) {
-            const n = this._notifQueue.shift();
-            n.disconnectObject?.(this);
-            if (!n.acknowledged && n.source) {
-                this._presentNotification(n);
-                return;
-            }
-        }
+        const held = this._notifQueue.filter(n => !n.acknowledged && n.source);
+        this._notifQueue.forEach(n => n.disconnectObject?.(this));
+        this._notifQueue = [];
+        if (!held.length)
+            return;
+        this._burst = held.length;
+        this._presentNotification(held[held.length - 1], false);
     }
 
-    _presentNotification(n) {
+    _fillNotification(n) {
         const strip = s => (s ?? '').replace(/<[^>]*>/g, '').replace(/\s*\n\s*/g, ' ').trim();
         this._notifIcon.gicon = n.gicon ?? n.source?.icon ?? themed('preferences-system-notifications-symbolic');
-        this._notifApp.text = (n.source?.title ?? '').toUpperCase();
+        const app = (n.source?.title ?? '').toUpperCase();
+        const more = this._burst > 1 ? `${this._burst} NEW` : '';
+        this._notifApp.text = [app, more].filter(Boolean).join('  ·  ');
         this._notifApp.visible = !!this._notifApp.text;
         this._notifTitle.text = strip(n.title);
         this._notifBody.text = strip(n.body);
         this._notifBody.visible = !!this._notifBody.text;
+    }
+
+    _presentNotification(n, replacing) {
+        const v = this._views.notif;
+        if (replacing && this._current === 'notif') {
+            // old text fades out, new text fades in, and the island gives a little bounce
+            v.remove_all_transitions();
+            v.ease({
+                opacity: 0, scale_x: 0.96, scale_y: 0.96,
+                duration: 90, mode: Clutter.AnimationMode.EASE_IN_QUAD,
+                onComplete: () => {
+                    if (this._notification !== n)
+                        return; // an even newer one took over
+                    this._fillNotification(n);
+                    this._render(); // the new text may need a different height
+                    v.ease({
+                        opacity: 255, scale_x: 1, scale_y: 1,
+                        duration: 240, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    });
+                },
+            });
+            this._kick();
+        } else {
+            this._fillNotification(n);
+        }
         this._notification = n;
         // the app may close it while it's on screen; forget it so a click can't touch a dead object
         n.connectObject('destroy', () => {
@@ -956,6 +983,21 @@ class Island extends St.Widget {
                 this._notification = null;
         }, this);
         this._showActivity('notif', CONFIG.NOTIF_MS);
+    }
+
+    // a quick swell-and-settle, like the island reacting to something new
+    _kick() {
+        this.set_pivot_point(0.5, 0.5);
+        this.remove_transition('scale-x');
+        this.remove_transition('scale-y');
+        this.ease({
+            scale_x: 1.045, scale_y: 1.045,
+            duration: 110, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => this.ease({
+                scale_x: 1, scale_y: 1,
+                duration: 460, mode: Clutter.AnimationMode.EASE_OUT_BACK,
+            }),
+        });
     }
 
     // ---------------------------------------------------------- battery --

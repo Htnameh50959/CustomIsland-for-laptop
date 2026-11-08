@@ -150,9 +150,8 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
                 'Apps mark some notifications as unimportant'),
         ]);
         group(notif, 'Timing', null, [
-            seconds('notif-ms', 'Show each one for', 'Seconds. Stays while the pointer is on it', 1, 30, 0.5, 1),
-            number('notif-queue-max', 'Waiting line', 'How many can queue up when several arrive at once',
-                {min: 1, max: 100, step: 1}),
+            seconds('notif-ms', 'Show each one for',
+                'Seconds. Stays while the pointer is on it. A newer one takes over at once', 1, 30, 0.5, 1),
         ]);
         window.add(notif);
 
