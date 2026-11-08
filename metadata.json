@@ -1,0 +1,7 @@
+{
+  "uuid": "custom-island@hemanth",
+  "name": "Custom Island",
+  "description": "An iOS-style Dynamic Island for the top bar: clock when idle, live media with album art and equalizer, hover to expand into a full player, plus volume/brightness, notifications and charging as island activities.",
+  "shell-version": ["46", "47", "48"],
+  "version": 1
+}

@@ -1,0 +1,77 @@
+/* ---------- the pill ---------- */
+.ci-island {
+  background-color: #000000;
+  color: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.ci-view { spacing: 10px; }
+
+.ci-clock {
+  font-weight: 700;
+  font-size: 10.5pt;
+  font-feature-settings: "tnum";
+}
+
+/* ---------- album art ---------- */
+.ci-art {
+  background-color: #2c2c2e;
+  background-size: cover;
+  background-position: center;
+  border-radius: 6px;
+}
+.ci-art-big { border-radius: 14px; }
+.ci-art StIcon { color: #8e8e93; }
+
+/* ---------- equalizer bars ---------- */
+.ci-bars { spacing: 2px; }
+.ci-bar {
+  background-color: #ffffff;
+  border-radius: 2px;
+  width: 3px;
+}
+
+/* ---------- expanded player ---------- */
+.ci-title { font-weight: 700; font-size: 11.5pt; }
+.ci-artist { color: #a1a1a6; font-size: 10pt; }
+.ci-player-name { color: #636366; font-size: 8.5pt; font-weight: 600; }
+.ci-time { color: #8e8e93; font-size: 8.5pt; font-feature-settings: "tnum"; }
+
+.ci-track {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  height: 5px;
+}
+.ci-fill {
+  background-color: #ffffff;
+  border-radius: 3px;
+  height: 5px;
+}
+
+.ci-controls { spacing: 26px; }
+.ci-btn {
+  border-radius: 99px;
+  padding: 6px;
+  color: #ffffff;
+  background-color: transparent;
+}
+.ci-btn:hover { background-color: rgba(255, 255, 255, 0.12); }
+.ci-btn:active { background-color: rgba(255, 255, 255, 0.22); }
+
+/* ---------- activities ---------- */
+.ci-percent {
+  font-weight: 700;
+  font-size: 10pt;
+  font-feature-settings: "tnum";
+  min-width: 38px;
+}
+.ci-osd-label { font-weight: 600; font-size: 10pt; }
+
+.ci-notif-title { font-weight: 700; font-size: 10.5pt; }
+.ci-notif-body { color: #c7c7cc; font-size: 9.5pt; }
+.ci-notif-app { color: #8e8e93; font-size: 8.5pt; font-weight: 600; }
+
+.ci-charge-icon { color: #30d158; }
+.ci-charge-text { font-weight: 600; font-size: 10pt; }
+.ci-charge-percent { color: #30d158; font-weight: 700; font-size: 10pt; }
