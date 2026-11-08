@@ -68,8 +68,8 @@
 }
 .ci-osd-label { font-weight: 600; font-size: 10pt; }
 
-.ci-notif-title { font-weight: 700; font-size: 10.5pt; }
-.ci-notif-body { color: #c7c7cc; font-size: 9.5pt; }
+.ci-notif-title { font-weight: 700; font-size: 10.5pt; max-height: 3.2em; }
+.ci-notif-body { color: #c7c7cc; font-size: 9.5pt; max-height: 9em; }
 .ci-notif-app { color: #8e8e93; font-size: 8.5pt; font-weight: 600; }
 
 .ci-charge-icon { color: #30d158; }

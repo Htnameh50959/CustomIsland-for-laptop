@@ -260,6 +260,16 @@ class Island extends St.Widget {
         return l;
     }
 
+    // a label that wraps onto several lines instead of cutting the text off with "…"
+    _wrapLabel(styleClass) {
+        const l = new St.Label({style_class: styleClass, y_align: Clutter.ActorAlign.CENTER, x_expand: true});
+        const t = l.clutter_text;
+        t.line_wrap = true;
+        t.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+        t.ellipsize = Pango.EllipsizeMode.END; // only kicks in at the max-height set in the stylesheet
+        return l;
+    }
+
     _art(size, big) {
         const bin = new St.Bin({
             style_class: big ? 'ci-art ci-art-big' : 'ci-art',
@@ -395,8 +405,8 @@ class Island extends St.Widget {
         this._notifIcon = new St.Icon({icon_size: 36, y_align: Clutter.ActorAlign.CENTER});
         const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
         this._notifApp = this._label('ci-notif-app');
-        this._notifTitle = this._label('ci-notif-title');
-        this._notifBody = this._label('ci-notif-body');
+        this._notifTitle = this._wrapLabel('ci-notif-title');
+        this._notifBody = this._wrapLabel('ci-notif-body');
         text.add_child(this._notifApp);
         text.add_child(this._notifTitle);
         text.add_child(this._notifBody);
@@ -1012,7 +1022,8 @@ class Island extends St.Widget {
         this._notifApp.text = [app, more].filter(Boolean).join('  ·  ');
         this._notifApp.visible = !!this._notifApp.text;
         this._notifTitle.text = strip(n.title);
-        this._notifBody.text = strip(n.body);
+        // keep the message's own line breaks; only the markup and extra blank lines go
+        this._notifBody.text = (n.body ?? '').replace(/<[^>]*>/g, '').replace(/[ \t]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
         this._notifBody.visible = !!this._notifBody.text;
         this._notifUrl = this._findUrl(n.body, n.title);
         this._notifLinkLabel.text = this._notifUrl ? this._prettyUrl(this._notifUrl) : '';
@@ -1048,7 +1059,9 @@ class Island extends St.Widget {
             if (this._notification === n)
                 this._notification = null;
         }, this);
-        this._showActivity('notif', CONFIG.NOTIF_MS);
+        // longer messages stay up longer so they can be read in full
+        const chars = (n.title?.length ?? 0) + (n.body?.length ?? 0);
+        this._showActivity('notif', Math.min(CONFIG.NOTIF_MS + Math.max(0, chars - 60) * 45, 14000));
     }
 
     // a quick swell-and-settle, like the island reacting to something new
