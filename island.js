@@ -33,7 +33,10 @@ export const CONFIG = {
     NOTIF_MS: 4500,
     CHARGE_MS: 3000,
     SPRING_MS: 620,
-    TOP_GAP: 3,                   // px between screen top and the pill
+    BELOW_PANEL: true,            // float under the top bar instead of inside it
+    TOP_GAP: 6,                   // px between the top bar (or screen top) and the pill
+    PILL_HEIGHT: 32,              // pill height when it floats under the top bar
+    IDLE_WIDTH: 120,              // empty idle pill width (below-panel mode)
     MAX_RADIUS: 30,
     EXPANDED_WIDTH: 400,
     NOTIF_WIDTH: 380,
@@ -138,7 +141,9 @@ class Island extends St.Widget {
         });
 
         this._cacheDir = cacheDir;
-        this._H = Math.max(24, (Main.panel.height || 32) - 2 * CONFIG.TOP_GAP);
+        this._H = CONFIG.BELOW_PANEL
+            ? CONFIG.PILL_HEIGHT
+            : Math.max(24, (Main.panel.height || 32) - 2 * CONFIG.TOP_GAP);
         this._ids = new Set();
         this._current = null;
         this._target = null;
@@ -171,9 +176,10 @@ class Island extends St.Widget {
         this._updateClock();
 
         // the real clock stays in the panel (so its calendar menu still
-        // anchors there) but becomes invisible under the island
+        // anchors there); inside-panel mode hides it under the island
         this._dateMenu = Main.panel.statusArea.dateMenu;
-        this._dateMenu.container.opacity = 0;
+        if (!CONFIG.BELOW_PANEL)
+            this._dateMenu.container.opacity = 0;
         this._dateMenu.container.connectObject('destroy', () => (this._dateMenu = null), this);
         this._dateMenu.menu.connectObject('open-state-changed', (_m, open) => {
             if (open)
@@ -243,6 +249,11 @@ class Island extends St.Widget {
         const v = new St.BoxLayout({style_class: 'ci-view', height: this._H, style: 'padding: 0 18px;'});
         this._idleClock = this._label('ci-clock');
         v.add_child(this._idleClock);
+        if (CONFIG.BELOW_PANEL) {
+            // the panel already shows the time: idle is an empty pill, like iPhone
+            this._idleClock.hide();
+            v.width = CONFIG.IDLE_WIDTH;
+        }
         return v;
     }
 
@@ -459,8 +470,13 @@ class Island extends St.Widget {
         this.set_style(`border-radius: ${Math.round(Math.min(h / 2, CONFIG.MAX_RADIUS))}px;`);
         const mon = Main.layoutManager.primaryMonitor;
         if (mon)
-            this.set_position(Math.round(mon.x + (mon.width - w) / 2), mon.y + CONFIG.TOP_GAP);
+            this.set_position(Math.round(mon.x + (mon.width - w) / 2), this._top(mon));
         this._layoutViews();
+    }
+
+    _top(mon) {
+        const panel = CONFIG.BELOW_PANEL ? (Main.panel.height || 0) : 0;
+        return mon.y + panel + CONFIG.TOP_GAP;
     }
 
     // views keep their natural size and stay centred; the pill clips them,
