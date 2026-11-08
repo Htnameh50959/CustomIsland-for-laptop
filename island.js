@@ -6,6 +6,7 @@
 //   osd       – volume / brightness / caps-lock etc. (replaces GNOME's OSD)
 //   notif     – incoming notification (replaces GNOME's banner)
 //   charge    – charger plugged in
+//   link      – a link or email address was just copied: click to open it
 //
 // Activities (osd/notif/charge) temporarily take over, then it falls back.
 
@@ -15,6 +16,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import GnomeDesktop from 'gi://GnomeDesktop';
+import Meta from 'gi://Meta';
 import Pango from 'gi://Pango';
 import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
@@ -33,6 +35,8 @@ export const CONFIG = {
     NOTIF_RESPECT_DND: true,      // Do Not Disturb holds back non-critical ones
     NOTIF_RESPECT_APP_SETTINGS: false, // honour per-app "pop-ups off" in Settings
     SHOW_CHARGING: true,
+    COPIED_LINKS: true,           // offer to open a link/email right after it's copied
+    LINK_MS: 5000,
     HOVER_EXPAND_MS: 180,
     HOVER_COLLAPSE_MS: 380,
     OSD_MS: 1600,
@@ -181,6 +185,7 @@ class Island extends St.Widget {
             osd: this._buildOsd(),
             notif: this._buildNotif(),
             charge: this._buildCharge(),
+            link: this._buildLink(),
         };
         for (const v of Object.values(this._views)) {
             v.opacity = 0;
@@ -214,6 +219,7 @@ class Island extends St.Widget {
         this._setupOsd();
         this._setupNotifications();
         this._setupBattery();
+        this._setupClipboard();
         this._mpris = new MprisWatcher(() => this._onPlayersChanged());
 
         Main.layoutManager.connectObject('monitors-changed', () => {
@@ -394,8 +400,47 @@ class Island extends St.Widget {
         text.add_child(this._notifApp);
         text.add_child(this._notifTitle);
         text.add_child(this._notifBody);
+        // a link found in the notification, as a button that opens it
+        this._notifLinkLabel = this._label('ci-link-label');
+        this._notifLink = new St.Button({
+            style_class: 'ci-link', x_align: Clutter.ActorAlign.START, can_focus: true,
+            child: this._linkChip(this._notifLinkLabel),
+        });
+        this._notifLink.connect('clicked', () => {
+            if (this._notifUrl)
+                this._openUri(this._notifUrl);
+            this._endActivity();
+        });
+        text.add_child(this._notifLink);
         v.add_child(this._notifIcon);
         v.add_child(text);
+        return v;
+    }
+
+    _linkChip(label) {
+        const box = new St.BoxLayout({style: 'spacing: 6px;'});
+        box.add_child(new St.Icon({icon_name: 'web-browser-symbolic', icon_size: 12, y_align: Clutter.ActorAlign.CENTER}));
+        box.add_child(label);
+        box.add_child(new St.Icon({icon_name: 'adw-external-link-symbolic', icon_size: 11, y_align: Clutter.ActorAlign.CENTER, style: 'color: #8e8e93;'}));
+        return box;
+    }
+
+    _buildLink() {
+        const v = new St.BoxLayout({
+            style_class: 'ci-view', width: CONFIG.NOTIF_WIDTH,
+            style: 'padding: 12px 14px 12px 18px; spacing: 12px;',
+        });
+        this._linkIcon = new St.Icon({style_class: 'ci-link-icon', icon_size: 22, y_align: Clutter.ActorAlign.CENTER});
+        const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this._linkKind = this._label('ci-notif-app');
+        this._linkText = this._label('ci-link-text');
+        text.add_child(this._linkKind);
+        text.add_child(this._linkText);
+        this._linkOpen = new St.Button({style_class: 'ci-open', label: 'Open', y_align: Clutter.ActorAlign.CENTER, can_focus: true});
+        this._linkOpen.connect('clicked', () => this._openCopied());
+        v.add_child(this._linkIcon);
+        v.add_child(text);
+        v.add_child(this._linkOpen);
         return v;
     }
 
@@ -681,6 +726,9 @@ class Island extends St.Widget {
                     this._player?.playPause();
                 }
                 break;
+            case 'link':
+                this._openCopied();
+                break;
             case 'notif':
                 try {
                     this._notification?.activate();
@@ -951,6 +999,9 @@ class Island extends St.Widget {
         this._notifTitle.text = strip(n.title);
         this._notifBody.text = strip(n.body);
         this._notifBody.visible = !!this._notifBody.text;
+        this._notifUrl = this._findUrl(n.body, n.title);
+        this._notifLinkLabel.text = this._notifUrl ? this._prettyUrl(this._notifUrl) : '';
+        this._notifLink.visible = !!this._notifUrl;
     }
 
     _presentNotification(n, replacing) {
@@ -998,6 +1049,82 @@ class Island extends St.Widget {
                 duration: 460, mode: Clutter.AnimationMode.EASE_OUT_BACK,
             }),
         });
+    }
+
+    // ------------------------------------------------------------ links --
+    // Links in a notification: <a href> markup first, then plain URLs.
+    _findUrl(...texts) {
+        for (const t of texts) {
+            const href = /<a\s[^>]*href=["']([^"']+)["']/i.exec(t ?? '');
+            if (href && /^(https?|mailto):/i.test(href[1]))
+                return href[1];
+        }
+        for (const t of texts) {
+            const m = /\b(?:https?:\/\/|www\.)[^\s<>"']+/i.exec((t ?? '').replace(/<[^>]*>/g, ' '));
+            if (m)
+                return this._normaliseUrl(m[0].replace(/[.,;:!?)\]}>]+$/, ''));
+        }
+        return null;
+    }
+
+    _normaliseUrl(u) {
+        return /^www\./i.test(u) ? `https://${u}` : u;
+    }
+
+    // "https://www.example.com/some/long/path?x=1" → "example.com/some/long/path"
+    _prettyUrl(u) {
+        if (u.startsWith('mailto:'))
+            return u.slice(7);
+        return u.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/[?#].*$/, '').replace(/\/$/, '');
+    }
+
+    _openUri(uri) {
+        try {
+            Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1));
+        } catch (e) {
+            console.warn(`[custom-island] open ${uri}: ${e.message}`);
+        }
+    }
+
+    // Like OriginOS: copy a link or an email address and the island offers to open it.
+    _setupClipboard() {
+        global.display.get_selection().connectObject('owner-changed', (_sel, type) => {
+            if (type !== Meta.SelectionType.SELECTION_CLIPBOARD || !CONFIG.COPIED_LINKS)
+                return;
+            St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_c, text) => this._onCopied(text));
+        }, this);
+    }
+
+    _onCopied(text) {
+        const t = (text ?? '').trim();
+        if (!t || t.length > 2048 || /\s/.test(t) || this._isFullscreen())
+            return;
+        let uri = null;
+        if (/^(https?:\/\/|www\.)[^\s]+\.[^\s]+/i.test(t))
+            uri = this._normaliseUrl(t);
+        else if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(t))
+            uri = `mailto:${t}`;
+        if (!uri)
+            return;
+        // the same thing copied again a moment later isn't news
+        const now = GLib.get_monotonic_time();
+        if (uri === this._copiedUri && now - (this._copiedAt ?? 0) < 3e6)
+            return;
+        this._copiedUri = uri;
+        this._copiedAt = now;
+
+        const mail = uri.startsWith('mailto:');
+        this._linkIcon.icon_name = mail ? 'mail-unread-symbolic' : 'web-browser-symbolic';
+        this._linkKind.text = mail ? 'EMAIL ADDRESS COPIED' : 'LINK COPIED';
+        this._linkText.text = this._prettyUrl(uri);
+        this._linkOpen.label = mail ? 'Write' : 'Open';
+        this._showActivity('link', CONFIG.LINK_MS);
+    }
+
+    _openCopied() {
+        if (this._copiedUri)
+            this._openUri(this._copiedUri);
+        this._endActivity();
     }
 
     // ---------------------------------------------------------- battery --

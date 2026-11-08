@@ -1,5 +1,6 @@
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import Gdk from 'gi://Gdk';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
@@ -171,6 +172,14 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             chargeFor,
         ]);
 
+        const linkFor = seconds('link-ms', 'Show for', 'Seconds', 1, 15, 0.5, 1);
+        dependsOn(linkFor, 'copied-links');
+        group(more, 'Links', 'Links inside notifications always get an Open button', [
+            toggle('copied-links', 'Offer to open copied links',
+                'Copy a link or email address and the island pops out with an Open button'),
+            linkFor,
+        ]);
+
         const reset = new Gtk.Button({
             label: 'Reset all settings', halign: Gtk.Align.CENTER, margin_top: 12,
             css_classes: ['destructive-action', 'pill'],
@@ -189,6 +198,29 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             });
             dialog.present(window);
         });
+        // ------------------------------------------------------- about --
+        const openUri = uri => {
+            try {
+                new Gtk.UriLauncher({uri}).launch(window, null, null);
+            } catch {
+                Gtk.show_uri(window, uri, Gdk.CURRENT_TIME);
+            }
+        };
+        const linkRow = (title, subtitle, uri) => {
+            const row = new Adw.ActionRow({title, subtitle, activatable: true, tooltip_text: uri});
+            row.add_suffix(new Gtk.Image({icon_name: 'adw-external-link-symbolic'}));
+            row.connect('activated', () => openUri(uri));
+            return row;
+        };
+        const url = this.metadata.url;
+        const version = this.metadata['version-name'] ?? String(this.metadata.version ?? '');
+        if (url) {
+            group(more, 'About', `Custom Island ${version}`.trim(), [
+                linkRow('Project page', 'Source code, updates and how to install', url),
+                linkRow('Report a problem', 'Open an issue on GitHub', `${url}/issues`),
+            ]);
+        }
+
         const resetGroup = new Adw.PreferencesGroup();
         resetGroup.add(reset);
         more.add(resetGroup);

@@ -34,6 +34,10 @@ export const KEYS = {
     'osd-ms':                {config: 'OSD_MS', type: 'i'},
     'show-charging':         {config: 'SHOW_CHARGING', type: 'b'},
     'charge-ms':             {config: 'CHARGE_MS', type: 'i'},
+
+    // links
+    'copied-links':          {config: 'COPIED_LINKS', type: 'b'},
+    'link-ms':               {config: 'LINK_MS', type: 'i'},
 };
 
 export function readKey(settings, key) {

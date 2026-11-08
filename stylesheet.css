@@ -75,3 +75,27 @@
 .ci-charge-icon { color: #30d158; }
 .ci-charge-text { font-weight: 600; font-size: 10pt; }
 .ci-charge-percent { color: #30d158; font-weight: 700; font-size: 10pt; }
+
+/* ---------- links ---------- */
+.ci-link {
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.10);
+  color: #64d2ff;
+}
+.ci-link:hover { background-color: rgba(255, 255, 255, 0.18); }
+.ci-link:active { background-color: rgba(255, 255, 255, 0.26); }
+.ci-link-label { font-size: 9pt; font-weight: 600; max-width: 260px; }
+.ci-link-icon { color: #64d2ff; }
+.ci-link-text { font-weight: 600; font-size: 10pt; }
+.ci-open {
+  padding: 6px 16px;
+  border-radius: 999px;
+  background-color: #0a84ff;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 9.5pt;
+}
+.ci-open:hover { background-color: #409cff; }
+.ci-open:active { background-color: #0060df; }

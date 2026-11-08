@@ -64,6 +64,10 @@
       <summary>How long volume/brightness stays, in milliseconds</summary></key>
     <key name="show-charging" type="b"><default>true</default>
       <summary>Show when the charger is plugged in</summary></key>
+    <key name="copied-links" type="b"><default>true</default>
+      <summary>When a link or email address is copied, offer to open it</summary></key>
+    <key name="link-ms" type="i"><range min="1000" max="15000"/><default>5000</default>
+      <summary>How long the copied-link offer stays, in milliseconds</summary></key>
     <key name="charge-ms" type="i"><range min="500" max="15000"/><default>3000</default>
       <summary>How long the charging message stays, in milliseconds</summary></key>
   </schema>
