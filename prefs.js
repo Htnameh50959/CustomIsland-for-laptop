@@ -174,9 +174,9 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
 
         const linkFor = seconds('link-ms', 'Show for', 'Seconds', 1, 15, 0.5, 1);
         dependsOn(linkFor, 'copied-links');
-        group(more, 'Links', 'Links inside notifications always get an Open button', [
-            toggle('copied-links', 'Offer to open copied links',
-                'Copy a link or email address and the island pops out with an Open button'),
+        group(more, 'Copy & links', 'Links inside notifications always get an Open button', [
+            toggle('copied-links', 'Copy suggestions',
+                'Copy something and the island offers to open, search or translate it'),
             linkFor,
         ]);
 

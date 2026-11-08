@@ -6,7 +6,7 @@
 //   osd       – volume / brightness / caps-lock etc. (replaces GNOME's OSD)
 //   notif     – incoming notification (replaces GNOME's banner)
 //   charge    – charger plugged in
-//   link      – a link or email address was just copied: click to open it
+//   link      – something was just copied: Open / Write / Search / Translate it
 //
 // Activities (osd/notif/charge) temporarily take over, then it falls back.
 
@@ -414,6 +414,9 @@ class Island extends St.Widget {
         text.add_child(this._notifLink);
         v.add_child(this._notifIcon);
         v.add_child(text);
+        const close = this._closeButton();
+        close.y_align = Clutter.ActorAlign.START;
+        v.add_child(close);
         return v;
     }
 
@@ -436,12 +439,24 @@ class Island extends St.Widget {
         this._linkText = this._label('ci-link-text');
         text.add_child(this._linkKind);
         text.add_child(this._linkText);
-        this._linkOpen = new St.Button({style_class: 'ci-open', label: 'Open', y_align: Clutter.ActorAlign.CENTER, can_focus: true});
-        this._linkOpen.connect('clicked', () => this._openCopied());
+        // suggestion buttons (filled in per copy), then the close button
+        this._linkActions = new St.BoxLayout({style: 'spacing: 6px;', y_align: Clutter.ActorAlign.CENTER});
         v.add_child(this._linkIcon);
         v.add_child(text);
-        v.add_child(this._linkOpen);
+        v.add_child(this._linkActions);
+        v.add_child(this._closeButton());
         return v;
+    }
+
+    // ✕ in the corner: closes whatever the island is showing
+    _closeButton() {
+        const b = new St.Button({
+            style_class: 'ci-close', can_focus: true, y_align: Clutter.ActorAlign.CENTER,
+            accessible_name: 'Close',
+            child: new St.Icon({icon_name: 'window-close-symbolic', icon_size: 12}),
+        });
+        b.connect('clicked', () => this._endActivity());
+        return b;
     }
 
     _buildCharge() {
@@ -1095,35 +1110,64 @@ class Island extends St.Widget {
         }, this);
     }
 
+    // Like OriginOS: whatever you copy, the island offers what to do with it.
     _onCopied(text) {
         const t = (text ?? '').trim();
-        if (!t || t.length > 2048 || /\s/.test(t) || this._isFullscreen())
-            return;
-        let uri = null;
-        if (/^(https?:\/\/|www\.)[^\s]+\.[^\s]+/i.test(t))
-            uri = this._normaliseUrl(t);
-        else if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(t))
-            uri = `mailto:${t}`;
-        if (!uri)
+        if (!t || t.length > 20000 || this._isFullscreen())
             return;
         // the same thing copied again a moment later isn't news
         const now = GLib.get_monotonic_time();
-        if (uri === this._copiedUri && now - (this._copiedAt ?? 0) < 3e6)
+        if (t === this._copiedText && now - (this._copiedAt ?? 0) < 30e6)
             return;
-        this._copiedUri = uri;
+        this._copiedText = t;
         this._copiedAt = now;
 
-        const mail = uri.startsWith('mailto:');
-        this._linkIcon.icon_name = mail ? 'mail-unread-symbolic' : 'web-browser-symbolic';
-        this._linkKind.text = mail ? 'EMAIL ADDRESS COPIED' : 'LINK COPIED';
-        this._linkText.text = this._prettyUrl(uri);
-        this._linkOpen.label = mail ? 'Write' : 'Open';
+        const single = !/\s/.test(t);
+        let icon, kind, shown, actions;
+        if (single && /^(https?:\/\/|www\.)[^\s]+\.[^\s]+/i.test(t)) {
+            const url = this._normaliseUrl(t);
+            [icon, kind, shown] = ['web-browser-symbolic', 'LINK COPIED', this._prettyUrl(url)];
+            actions = [['Open', true, () => this._openUri(url)]];
+        } else if (single && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(t)) {
+            [icon, kind, shown] = ['mail-unread-symbolic', 'EMAIL ADDRESS COPIED', t];
+            actions = [['Write', true, () => this._openUri(`mailto:${t}`)]];
+        } else {
+            const q = encodeURIComponent(t.slice(0, 1000));
+            [icon, kind] = ['edit-copy-symbolic', 'TEXT COPIED'];
+            // looks like a password: never put it on screen
+            shown = this._looksSecret(t) ? '••••••••' : t.replace(/\s+/g, ' ').slice(0, 200);
+            actions = [
+                ['Search', true, () => this._openUri(`https://www.google.com/search?q=${q}`)],
+                ['Translate', false, () => this._openUri(`https://translate.google.com/?sl=auto&op=translate&text=${q}`)],
+            ];
+        }
+        this._linkIcon.icon_name = icon;
+        this._linkKind.text = kind;
+        this._linkText.text = shown;
+        this._linkActions.destroy_all_children();
+        for (const [label, primary, run] of actions) {
+            const b = new St.Button({
+                style_class: primary ? 'ci-open' : 'ci-open ci-open-secondary',
+                label, can_focus: true, y_align: Clutter.ActorAlign.CENTER,
+            });
+            b.connect('clicked', () => {
+                run();
+                this._endActivity();
+            });
+            this._linkActions.add_child(b);
+        }
+        this._linkPrimary = actions[0][2];
         this._showActivity('link', CONFIG.LINK_MS);
     }
 
+    // one word, 8–64 characters, mixing letters and digits, and not a web address
+    _looksSecret(t) {
+        return !/\s/.test(t) && t.length >= 8 && t.length <= 64 &&
+            /[a-z]/i.test(t) && /[0-9]/.test(t) && !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t);
+    }
+
     _openCopied() {
-        if (this._copiedUri)
-            this._openUri(this._copiedUri);
+        this._linkPrimary?.();
         this._endActivity();
     }
 

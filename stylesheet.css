@@ -99,3 +99,16 @@
 }
 .ci-open:hover { background-color: #409cff; }
 .ci-open:active { background-color: #0060df; }
+.ci-open-secondary { background-color: rgba(255, 255, 255, 0.14); }
+.ci-open-secondary:hover { background-color: rgba(255, 255, 255, 0.22); }
+.ci-open-secondary:active { background-color: rgba(255, 255, 255, 0.30); }
+
+/* ---------- close ---------- */
+.ci-close {
+  padding: 5px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.10);
+  color: #aeaeb2;
+}
+.ci-close:hover { background-color: rgba(255, 255, 255, 0.20); color: #ffffff; }
+.ci-close:active { background-color: rgba(255, 255, 255, 0.28); }
