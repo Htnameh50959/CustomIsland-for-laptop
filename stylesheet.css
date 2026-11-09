@@ -1,9 +1,14 @@
 /* ---------- the pill ---------- */
 .ci-island {
-  background-color: #000000;
+  /* liquid glass: translucent tint over a blurred backdrop, bright rim */
+  background-gradient-direction: vertical;
+  background-gradient-start: rgba(70, 70, 78, 0.78);
+  background-gradient-end: rgba(8, 8, 12, 0.90);
   color: #ffffff;
   border-radius: 14px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.40),
+              inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .ci-view { spacing: 10px; }
@@ -68,20 +73,30 @@
 }
 .ci-osd-label { font-weight: 600; font-size: 10pt; }
 
-.ci-notif-title { font-weight: 700; font-size: 10.5pt; max-height: 3.2em; }
-.ci-notif-body { color: #c7c7cc; font-size: 9.5pt; max-height: 9em; }
+.ci-notif-title { font-weight: 700; font-size: 10.5pt; }
+.ci-notif-body { color: #c7c7cc; font-size: 9.5pt; }
 .ci-notif-app { color: #8e8e93; font-size: 8.5pt; font-weight: 600; }
 
 .ci-charge-icon { color: #30d158; }
 .ci-charge-text { font-weight: 600; font-size: 10pt; }
 .ci-charge-percent { color: #30d158; font-weight: 700; font-size: 10pt; }
 
+.ci-privacy-title, .ci-hotspot-title { font-weight: 600; font-size: 10pt; }
+.ci-privacy-value, .ci-hotspot-value { font-weight: 700; font-size: 10pt; }
+.ci-privacy-mic { color: #ff9f0a; }
+.ci-privacy-cam { color: #30d158; }
+.ci-privacy-both { color: #ff9f0a; }
+.ci-privacy-value { color: #ff9f0a; }
+.ci-hotspot-icon { color: #30d158; }
+.ci-hotspot-value { color: #30d158; }
+
 /* ---------- links ---------- */
 .ci-link {
   margin-top: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  background-color: rgba(255, 255, 255, 0.10);
+  background-color: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   color: #64d2ff;
 }
 .ci-link:hover { background-color: rgba(255, 255, 255, 0.18); }
@@ -92,14 +107,15 @@
 .ci-open {
   padding: 6px 16px;
   border-radius: 999px;
-  background-color: #0a84ff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background-color: rgba(10, 132, 255, 0.85);
   color: #ffffff;
   font-weight: 700;
   font-size: 9.5pt;
 }
 .ci-open:hover { background-color: #409cff; }
 .ci-open:active { background-color: #0060df; }
-.ci-open-secondary { background-color: rgba(255, 255, 255, 0.14); }
+.ci-open-secondary { background-color: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.25); }
 .ci-open-secondary:hover { background-color: rgba(255, 255, 255, 0.22); }
 .ci-open-secondary:active { background-color: rgba(255, 255, 255, 0.30); }
 

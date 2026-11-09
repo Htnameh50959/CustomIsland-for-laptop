@@ -16,6 +16,8 @@ export const KEYS = {
     'idle-width':            {config: 'IDLE_WIDTH', type: 'i', rebuild: true},
     'expanded-width':        {config: 'EXPANDED_WIDTH', type: 'i', rebuild: true},
     'notif-width':           {config: 'NOTIF_WIDTH', type: 'i', rebuild: true},
+    'notif-gap':             {config: 'NOTIF_GAP', type: 'i', rebuild: true},
+    'status-width':          {config: 'STATUS_WIDTH', type: 'i', rebuild: true},
     'max-radius':            {config: 'MAX_RADIUS', type: 'i'},
     'spring-ms':             {config: 'SPRING_MS', type: 'i'},
     'hover-expand-ms':       {config: 'HOVER_EXPAND_MS', type: 'i'},
@@ -34,6 +36,8 @@ export const KEYS = {
     'osd-ms':                {config: 'OSD_MS', type: 'i'},
     'show-charging':         {config: 'SHOW_CHARGING', type: 'b'},
     'charge-ms':             {config: 'CHARGE_MS', type: 'i'},
+    'privacy-indicators':    {config: 'PRIVACY_INDICATORS', type: 'b'},
+    'hotspot-devices':       {config: 'HOTSPOT_DEVICES', type: 'b'},
 
     // links
     'copied-links':          {config: 'COPIED_LINKS', type: 'b'},

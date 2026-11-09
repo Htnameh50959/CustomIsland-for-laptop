@@ -4,9 +4,12 @@
 //   compact   – album art · time · equalizer, while media is playing/paused
 //   expanded  – full player on hover (art, title, progress, controls)
 //   osd       – volume / brightness / caps-lock etc. (replaces GNOME's OSD)
-//   notif     – incoming notification (replaces GNOME's banner)
+//   notif     – incoming notification (replaces GNOME's banner); calls /
+//               navigation / timers stay as sticky live activities
 //   charge    – charger plugged in
-//   link      – something was just copied: Open / Write / Search / Translate it
+//   link      – Copy & Go: Open / Call / Message / New contact / Search / …
+//   privacy   – mic and/or camera in use (sticky while active)
+//   hotspot   – Wi-Fi hotspot on / connected devices (sticky while active)
 //
 // Activities (osd/notif/charge) temporarily take over, then it falls back.
 
@@ -19,11 +22,13 @@ import GnomeDesktop from 'gi://GnomeDesktop';
 import Meta from 'gi://Meta';
 import Pango from 'gi://Pango';
 import Soup from 'gi://Soup?version=3.0';
+import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {MprisWatcher} from './mpris.js';
+import {PrivacyMonitor} from './privacy.js';
 
 // ---------------------------------------------------------------- settings --
 // Defaults only: extension.js fills these from GSettings (see keys.js / prefs.js).
@@ -35,12 +40,15 @@ export const CONFIG = {
     NOTIF_RESPECT_DND: true,      // Do Not Disturb holds back non-critical ones
     NOTIF_RESPECT_APP_SETTINGS: false, // honour per-app "pop-ups off" in Settings
     SHOW_CHARGING: true,
+    PRIVACY_INDICATORS: true,     // mic / camera in-use pills
+    HOTSPOT_DEVICES: true,        // hotspot on / connected-device count
     COPIED_LINKS: true,           // offer to open a link/email right after it's copied
     LINK_MS: 5000,
     HOVER_EXPAND_MS: 180,
     HOVER_COLLAPSE_MS: 380,
     OSD_MS: 1600,
     NOTIF_MS: 4500,
+    LIVE_MS: 4500,      // sticky live activities auto-close after this
     CHARGE_MS: 3000,
     SPRING_MS: 620,
     // 'below'         – float under the top bar, centred
@@ -51,11 +59,13 @@ export const CONFIG = {
     BESIDE_GAP: 8,                // beside-clock: px between the date & time and the pill
     TOP_GAP: 6,                   // px between the top bar (or screen top) and the pill
     PILL_HEIGHT: 32,              // pill height when it floats under the top bar
-    IDLE_WIDTH: 120,              // empty idle pill width (when the idle pill shows no clock)
+    IDLE_WIDTH: 0,                // empty idle pill width (0 = a round dot as tall as the pill)
     HIDE_WHEN_IDLE: true,         // vanish when there's nothing to show (not in replace-clock)
     MAX_RADIUS: 30,
     EXPANDED_WIDTH: 400,
     NOTIF_WIDTH: 380,
+    NOTIF_GAP: 0,                 // extra padding inside notifications (px)
+    STATUS_WIDTH: 260,            // privacy / hotspot / charging-style pills
     OSD_TRACK_WIDTH: 150,
 };
 
@@ -156,12 +166,15 @@ class Island extends St.Widget {
             clip_to_allocation: true,
         });
 
+        // No Shell.BlurEffect here: on GNOME 46 it blurs the full rectangle and
+        // ignores border-radius, which showed up as square corners behind the pill.
+
         this._cacheDir = cacheDir;
         this._below = CONFIG.POSITION !== 'beside-clock' && CONFIG.POSITION !== 'replace-clock';
         this._beside = CONFIG.POSITION === 'beside-clock';
         this._replace = CONFIG.POSITION === 'replace-clock';
         this._H = this._below
-            ? CONFIG.PILL_HEIGHT
+            ? Math.max(16, CONFIG.PILL_HEIGHT || 0)
             : Math.max(24, (Main.panel.height || 32) - 2 * CONFIG.TOP_GAP);
         this._ids = new Set();
         this._current = null;
@@ -186,6 +199,8 @@ class Island extends St.Widget {
             notif: this._buildNotif(),
             charge: this._buildCharge(),
             link: this._buildLink(),
+            privacy: this._buildPrivacy(),
+            hotspot: this._buildHotspot(),
         };
         for (const v of Object.values(this._views)) {
             v.opacity = 0;
@@ -220,6 +235,7 @@ class Island extends St.Widget {
         this._setupNotifications();
         this._setupBattery();
         this._setupClipboard();
+        this._setupPrivacy();
         this._mpris = new MprisWatcher(() => this._onPlayersChanged());
 
         Main.layoutManager.connectObject('monitors-changed', () => {
@@ -266,7 +282,6 @@ class Island extends St.Widget {
         const t = l.clutter_text;
         t.line_wrap = true;
         t.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
-        t.ellipsize = Pango.EllipsizeMode.END; // only kicks in at the max-height set in the stylesheet
         return l;
     }
 
@@ -292,7 +307,10 @@ class Island extends St.Widget {
         if (!this._replace) {
             // the panel already shows the time: idle is an empty pill, like iPhone
             this._idleClock.hide();
-            v.width = CONFIG.IDLE_WIDTH;
+            // 0 = round dot (pill height); higher values grow the idle island
+            v.width = CONFIG.IDLE_WIDTH > 0 ? CONFIG.IDLE_WIDTH : this._H;
+            if (CONFIG.IDLE_WIDTH <= 0)
+                v.style = 'padding: 0;';
         }
         return v;
     }
@@ -309,17 +327,13 @@ class Island extends St.Widget {
         if (this._beside) {
             // the date & time is right next to the pill: don't show it twice
             this._compactClock.hide();
-            v.width = Math.max(H * 3, 96);
-            this._artSmall.x_expand = true;
-            this._artSmall.x_align = Clutter.ActorAlign.START;
         }
         return v;
     }
 
     _buildExpanded() {
-        const W = CONFIG.EXPANDED_WIDTH;
         const v = new St.BoxLayout({
-            style_class: 'ci-view', vertical: true, width: W,
+            style_class: 'ci-view', vertical: true,
             style: 'padding: 16px 20px 12px 20px; spacing: 12px;',
         });
 
@@ -343,7 +357,8 @@ class Island extends St.Widget {
         // fixed widths: resizing the fill from an allocation handler would
         // force a second layout pass every frame
         const TIME_W = 44;
-        this._trackW = W - 40 - 2 * TIME_W - 2 * 10;
+        // _fitExpanded() replaces this with the current content width.
+        this._trackW = Math.max(80, CONFIG.EXPANDED_WIDTH - 40 - 2 * TIME_W - 2 * 10);
         this._elapsed = this._label('ci-time', {width: TIME_W});
         this._remaining = this._label('ci-time', {width: TIME_W});
         this._remaining.clutter_text.line_alignment = Pango.Alignment.RIGHT;
@@ -356,6 +371,7 @@ class Island extends St.Widget {
 
         // controls
         const ctl = new St.BoxLayout({style_class: 'ci-controls', x_align: Clutter.ActorAlign.CENTER});
+        this._controls = ctl;
         const mk = (icon, size, cb) => {
             const b = new St.Button({
                 style_class: 'ci-btn', can_focus: true,
@@ -398,9 +414,10 @@ class Island extends St.Widget {
     }
 
     _buildNotif() {
+        const gap = Math.max(0, CONFIG.NOTIF_GAP | 0);
         const v = new St.BoxLayout({
-            style_class: 'ci-view', width: CONFIG.NOTIF_WIDTH,
-            style: 'padding: 14px 18px; spacing: 14px;',
+            style_class: 'ci-view',
+            style: `padding: ${14 + gap}px ${18 + gap}px; spacing: 14px;`,
         });
         this._notifIcon = new St.Icon({icon_size: 36, y_align: Clutter.ActorAlign.CENTER});
         const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
@@ -425,6 +442,7 @@ class Island extends St.Widget {
         v.add_child(this._notifIcon);
         v.add_child(text);
         const close = this._closeButton();
+        this._notifClose = close;
         close.y_align = Clutter.ActorAlign.START;
         v.add_child(close);
         return v;
@@ -440,7 +458,7 @@ class Island extends St.Widget {
 
     _buildLink() {
         const v = new St.BoxLayout({
-            style_class: 'ci-view', width: CONFIG.NOTIF_WIDTH,
+            style_class: 'ci-view',
             style: 'padding: 12px 14px 12px 18px; spacing: 12px;',
         });
         this._linkIcon = new St.Icon({style_class: 'ci-link-icon', icon_size: 22, y_align: Clutter.ActorAlign.CENTER});
@@ -454,7 +472,8 @@ class Island extends St.Widget {
         v.add_child(this._linkIcon);
         v.add_child(text);
         v.add_child(this._linkActions);
-        v.add_child(this._closeButton());
+        this._linkClose = this._closeButton();
+        v.add_child(this._linkClose);
         return v;
     }
 
@@ -470,7 +489,7 @@ class Island extends St.Widget {
     }
 
     _buildCharge() {
-        const v = new St.BoxLayout({style_class: 'ci-view', height: this._H + 8, width: 280, style: 'padding: 0 18px; spacing: 10px;'});
+        const v = new St.BoxLayout({style_class: 'ci-view', height: this._H + 8, style: 'padding: 0 18px; spacing: 10px;'});
         this._chargeIcon = new St.Icon({
             style_class: 'ci-charge-icon', icon_size: 18,
             icon_name: 'battery-full-charging-symbolic', y_align: Clutter.ActorAlign.CENTER,
@@ -483,10 +502,44 @@ class Island extends St.Widget {
         return v;
     }
 
+    _buildPrivacy() {
+        // Compact like now-playing: only the active indicators take up room.
+        const H = this._H;
+        const v = new St.BoxLayout({
+            style_class: 'ci-view', height: H,
+            style: 'padding: 0 12px; spacing: 8px;',
+        });
+        const icon = (name, styleClass) => new St.Icon({
+            style_class: styleClass, icon_size: Math.round(H * 0.5),
+            icon_name: name, y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._privacyMic = icon('audio-input-microphone-symbolic', 'ci-privacy-icon ci-privacy-mic');
+        this._privacyCam = icon('camera-web-symbolic', 'ci-privacy-icon ci-privacy-cam');
+        this._privacyHotspot = icon('network-wireless-hotspot-symbolic', 'ci-hotspot-icon');
+        this._privacyCount = this._label('ci-hotspot-value');
+        v.add_child(this._privacyMic);
+        v.add_child(this._privacyCam);
+        v.add_child(this._privacyHotspot);
+        v.add_child(this._privacyCount);
+        return v;
+    }
+
+    _buildHotspot() {
+        // Unused: hotspot shares the compact privacy pill. Stub keeps the view map intact.
+        return new St.BoxLayout({style_class: 'ci-view', height: this._H, width: 2});
+    }
+
     // ------------------------------------------------------------ state --
     _desiredView() {
         if (this._activity)
             return this._activity.kind;
+        const p = this._privacy;
+        const mic = CONFIG.PRIVACY_INDICATORS && p?.micActive;
+        const cam = CONFIG.PRIVACY_INDICATORS && p?.cameraActive;
+        const hotspot = CONFIG.HOTSPOT_DEVICES && p?.hotspotOn;
+        // Mic, camera and hotspot share one compact music-sized privacy pill.
+        if (mic || cam || hotspot)
+            return 'privacy';
         if (this._player)
             return this._expanded ? 'expanded' : 'compact';
         return 'idle';
@@ -499,8 +552,60 @@ class Island extends St.Widget {
         return [Math.ceil(w), Math.ceil(h)];
     }
 
+    _naturalWidth(actor) {
+        const [, width] = actor.get_preferred_width(-1);
+        return Math.ceil(width);
+    }
+
+    _maxWidth(configured) {
+        const monitor = Main.layoutManager.primaryMonitor;
+        return Math.max(2, Math.min(configured, (monitor?.width ?? configured) - 24));
+    }
+
+    _setContentWidth(kind, width, min, max) {
+        const upper = this._maxWidth(max);
+        this._views[kind].width = Math.round(Math.min(upper, Math.max(Math.min(min, upper), width)));
+    }
+
+    _fitExpanded() {
+        const text = Math.max(
+            this._naturalWidth(this._playerName),
+            this._naturalWidth(this._title),
+            this._naturalWidth(this._artist)
+        );
+        const header = 40 + this._naturalWidth(this._artBig) + 14 + text + 14 +
+            this._naturalWidth(this._barsBig.actor);
+        const progress = 40 + 2 * 44 + 2 * 10 + 80;
+        const controls = 40 + this._naturalWidth(this._controls);
+        const width = Math.max(header, progress, controls);
+        this._setContentWidth('expanded', width, 240, CONFIG.EXPANDED_WIDTH);
+        this._trackW = Math.max(80, this._views.expanded.width - 40 - 2 * 44 - 2 * 10);
+        this._track.width = this._trackW;
+        this._fill.width = Math.min(this._fill.width, this._trackW);
+    }
+
+    _fitNotification() {
+        const text = Math.max(
+            this._naturalWidth(this._notifApp),
+            this._naturalWidth(this._notifTitle),
+            this._naturalWidth(this._notifBody),
+            this._naturalWidth(this._notifLink)
+        );
+        const chrome = 36 + this._naturalWidth(this._notifClose) + 36 + 2 * 14;
+        this._setContentWidth('notif', chrome + text, 220, CONFIG.NOTIF_WIDTH);
+    }
+
+    _fitLink() {
+        const text = Math.max(this._naturalWidth(this._linkKind), this._naturalWidth(this._linkText));
+        const chrome = this._naturalWidth(this._linkIcon) + this._naturalWidth(this._linkActions) +
+            this._naturalWidth(this._linkClose) + 32 + 3 * 12;
+        this._setContentWidth('link', chrome + text, 240, CONFIG.NOTIF_WIDTH);
+    }
+
     _render() {
         const kind = this._desiredView();
+        if (kind === 'privacy')
+            this._fillPrivacy();
         const hide = CONFIG.HIDE_WHEN_IDLE && !this._replace && kind === 'idle';
         if (kind !== this._current)
             this._switchView(kind);
@@ -511,12 +616,27 @@ class Island extends St.Widget {
         this._updateLoops();
     }
 
+    _fillPrivacy() {
+        const mic = !!(CONFIG.PRIVACY_INDICATORS && this._privacy?.micActive);
+        const cam = !!(CONFIG.PRIVACY_INDICATORS && this._privacy?.cameraActive);
+        const hotspot = !!(CONFIG.HOTSPOT_DEVICES && this._privacy?.hotspotOn);
+        const n = this._privacy?.hotspotClients ?? 0;
+        this._privacyMic.visible = mic;
+        this._privacyCam.visible = cam;
+        this._privacyHotspot.visible = hotspot;
+        this._privacyCount.visible = hotspot && n > 0;
+        this._privacyCount.text = hotspot && n > 0 ? String(n) : '';
+    }
+
     _setShown(on) {
         if (this._shown === on)
             return;
         const first = this._shown === undefined;
         this._shown = on;
         this.reactive = on; // no hover/clicks on the hidden dot
+        // Drop a stale hover so a later notification can still auto-dismiss.
+        if (!on)
+            this.hover = false;
         this.remove_transition('opacity');
         if (first) {
             this.opacity = on ? 255 : 0;
@@ -655,24 +775,40 @@ class Island extends St.Widget {
             this._pollPosition();
     }
 
-    _showActivity(kind, ms) {
+    _showActivity(kind, ms, sticky = false) {
         if (kind !== 'notif' && this._activity?.kind === 'notif' && this._notification)
             this._queueNotification(this._notification); // show it again afterwards
         this._activityTimer = this._cancel(this._activityTimer);
-        this._activity = {kind};
+        this._activity = {kind, sticky};
         const expire = () => {
-            // keep a notification while the pointer is on it
-            if (this.hover && kind === 'notif') {
-                this._activityTimer = this._after(800, expire);
-                return;
+            // Keep a notification only while the pointer is really on a
+            // visible island. After hide-when-idle, Clutter can leave
+            // `hover` stuck true on the 2×2 dot and the pill would never
+            // go away — require shown + hover, and cap the extension.
+            if (kind === 'notif' && this.hover && this._shown) {
+                this._notifHold = (this._notifHold ?? 0) + 1;
+                if (this._notifHold < 15) { // ~12s extra max while hovering
+                    this._activityTimer = this._after(800, expire);
+                    return;
+                }
             }
+            this._notifHold = 0;
             this._activityTimer = 0;
             this._activity = null;
             this._notification = null;
-            this._render();
-            this._nextNotification();
+            try {
+                this._render();
+            } catch (e) {
+                console.warn(`[custom-island] expire render: ${e.message}`);
+            }
+            try {
+                this._nextNotification();
+            } catch (e) {
+                console.warn(`[custom-island] next notification: ${e.message}`);
+            }
         };
-        this._activityTimer = this._after(ms, expire);
+        this._notifHold = 0;
+        this._activityTimer = this._after(sticky ? CONFIG.LIVE_MS : ms, expire);
         this._render();
     }
 
@@ -807,6 +943,7 @@ class Island extends St.Widget {
         this._prevBtn.opacity = p.canGoPrevious ? 255 : 90;
         this._nextBtn.reactive = p.canGoNext;
         this._nextBtn.opacity = p.canGoNext ? 255 : 90;
+        this._fitExpanded();
         this._loadArt(p.artUrl);
         if (!p.length)
             this._setProgress(0, 0);
@@ -1017,9 +1154,11 @@ class Island extends St.Widget {
     _fillNotification(n) {
         const strip = s => (s ?? '').replace(/<[^>]*>/g, '').replace(/\s*\n\s*/g, ' ').trim();
         this._notifIcon.gicon = n.gicon ?? n.source?.icon ?? themed('preferences-system-notifications-symbolic');
+        this._liveNotification = this._classifyLiveNotification(n);
         const app = (n.source?.title ?? '').toUpperCase();
-        const more = this._burst > 1 ? `${this._burst} NEW` : '';
-        this._notifApp.text = [app, more].filter(Boolean).join('  ·  ');
+        const activity = this._liveNotification ? 'LIVE · ' + this._liveNotification : app;
+        const more = this._burst > 1 ? this._burst + ' NEW' : '';
+        this._notifApp.text = [activity, more].filter(Boolean).join('  ·  ');
         this._notifApp.visible = !!this._notifApp.text;
         this._notifTitle.text = strip(n.title);
         // keep the message's own line breaks; only the markup and extra blank lines go
@@ -1028,6 +1167,25 @@ class Island extends St.Widget {
         this._notifUrl = this._findUrl(n.body, n.title);
         this._notifLinkLabel.text = this._notifUrl ? this._prettyUrl(this._notifUrl) : '';
         this._notifLink.visible = !!this._notifUrl;
+        this._fitNotification();
+    }
+
+    _classifyLiveNotification(n) {
+        const plain = s => (s ?? '').replace(/<[^>]*>/g, ' ').toLowerCase();
+        const app = plain(n.source?.title);
+        const text = [app, n.title, n.body].map(plain).join(' ');
+        if (/\b(timer|stopwatch|countdown|alarm)\b/.test(text) || /\b(clock|timers?)\b/.test(app))
+            return 'TIMER';
+        if (/\b(navigation|navigating|route|turn left|turn right|arriving|destination)\b/.test(text) ||
+            /\b(maps?|waze|navigation)\b/.test(app))
+            return 'NAVIGATION';
+        if (/\b(incoming call|ongoing call|in call|call in progress|calling|ringing)\b/.test(text) ||
+            /\b(phone|calls?|dialer|telecom)\b/.test(app))
+            return 'CALL';
+        // Sticky / resident notifications often are live activities.
+        if (n.resident || n.isResident)
+            return 'LIVE';
+        return null;
     }
 
     _presentNotification(n, replacing) {
@@ -1056,12 +1214,16 @@ class Island extends St.Widget {
         this._notification = n;
         // the app may close it while it's on screen; forget it so a click can't touch a dead object
         n.connectObject('destroy', () => {
-            if (this._notification === n)
-                this._notification = null;
+            if (this._notification !== n)
+                return;
+            this._notification = null;
+            if (this._activity?.kind === 'notif' && this._activity.sticky)
+                this._endActivity();
         }, this);
-        // longer messages stay up longer so they can be read in full
+        // Calls, navigation and timers are live activities: they stay up until their
+        // notification is withdrawn; ordinary notifications use a readable timeout.
         const chars = (n.title?.length ?? 0) + (n.body?.length ?? 0);
-        this._showActivity('notif', Math.min(CONFIG.NOTIF_MS + Math.max(0, chars - 60) * 45, 14000));
+        this._showActivity('notif', Math.min(CONFIG.NOTIF_MS + Math.max(0, chars - 60) * 45, 14000), !!this._liveNotification);
     }
 
     // a quick swell-and-settle, like the island reacting to something new
@@ -1123,7 +1285,7 @@ class Island extends St.Widget {
         }, this);
     }
 
-    // Like OriginOS: whatever you copy, the island offers what to do with it.
+    // Copy & Go: recognise links, emails, phone numbers and plain text.
     _onCopied(text) {
         const t = (text ?? '').trim();
         if (!t || t.length > 20000 || this._isFullscreen())
@@ -1139,14 +1301,22 @@ class Island extends St.Widget {
         let icon, kind, shown, actions;
         if (single && /^(https?:\/\/|www\.)[^\s]+\.[^\s]+/i.test(t)) {
             const url = this._normaliseUrl(t);
-            [icon, kind, shown] = ['web-browser-symbolic', 'LINK COPIED', this._prettyUrl(url)];
+            [icon, kind, shown] = ['web-browser-symbolic', 'COPY & GO', this._prettyUrl(url)];
             actions = [['Open', true, () => this._openUri(url)]];
         } else if (single && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(t)) {
-            [icon, kind, shown] = ['mail-unread-symbolic', 'EMAIL ADDRESS COPIED', t];
+            [icon, kind, shown] = ['mail-unread-symbolic', 'COPY & GO', t];
             actions = [['Write', true, () => this._openUri(`mailto:${t}`)]];
+        } else if (this._isPhone(t)) {
+            const number = t.replace(/[^\d+]/g, '');
+            [icon, kind, shown] = ['call-start-symbolic', 'COPY & GO', t];
+            actions = [
+                ['Call', true, () => this._openUri(`tel:${number}`)],
+                ['Message', false, () => this._openUri(`sms:${number}`)],
+                ['New contact', false, () => this._openContacts(number)],
+            ];
         } else {
             const q = encodeURIComponent(t.slice(0, 1000));
-            [icon, kind] = ['edit-copy-symbolic', 'TEXT COPIED'];
+            [icon, kind] = ['edit-copy-symbolic', 'COPY & GO'];
             // looks like a password: never put it on screen
             shown = this._looksSecret(t) ? '••••••••' : t.replace(/\s+/g, ' ').slice(0, 200);
             actions = [
@@ -1170,7 +1340,32 @@ class Island extends St.Widget {
             this._linkActions.add_child(b);
         }
         this._linkPrimary = actions[0][2];
+        this._fitLink();
         this._showActivity('link', CONFIG.LINK_MS);
+    }
+
+    _isPhone(t) {
+        if (!/^[+()0-9][0-9 ()\-.]{5,20}$/.test(t))
+            return false;
+        const digits = (t.match(/\d/g) || []).length;
+        return digits >= 7 && digits <= 15;
+    }
+
+    _openContacts(number) {
+        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, number);
+        const ids = ['org.gnome.Contacts.desktop', 'org.gnome.Evolution.desktop', 'gnome-contacts.desktop'];
+        for (const id of ids) {
+            try {
+                const app = Gio.DesktopAppInfo.new(id);
+                if (app) {
+                    app.launch([], global.create_app_launch_context(0, -1));
+                    return;
+                }
+            } catch {
+                // try the next contacts app
+            }
+        }
+        this._openUri(`tel:${number}`);
     }
 
     // one word, 8–64 characters, mixing letters and digits, and not a web address
@@ -1182,6 +1377,12 @@ class Island extends St.Widget {
     _openCopied() {
         this._linkPrimary?.();
         this._endActivity();
+    }
+
+    // ----------------------------------------------- privacy / hotspot --
+    _setupPrivacy() {
+        this._privacy = new PrivacyMonitor(() => this._render());
+        this._privacy.start();
     }
 
     // ---------------------------------------------------------- battery --
@@ -1230,6 +1431,8 @@ class Island extends St.Widget {
             GLib.source_remove(this._relayoutId);
         this._timeline?.stop();
         this._timeline = null;
+        this._privacy?.destroy();
+        this._privacy = null;
         this._mpris?.destroy();
         this._soup.abort();
 

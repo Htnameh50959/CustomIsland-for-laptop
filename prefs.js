@@ -95,9 +95,10 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
 
         const hideIdle = toggle('hide-when-idle', 'Hide when there’s nothing to show',
             'The island disappears until music, a notification or volume needs it');
-        const height = pixels('pill-height', 'Height', 'Pixels, when floating below the top bar', 22, 56);
+        const height = pixels('pill-height', 'Island height',
+            'Starts at 0. How tall the island is, in pixels', 0, 56);
         const idleWidth = pixels('idle-width', 'Idle width',
-            'Pixels, when there’s nothing to show and it isn’t hidden', 60, 320, 4);
+            'Starts at 0 (a round dot). Drag up to grow the idle island', 0, 320, 4);
         const side = choice('clock-side', 'Side', 'Which side of the date and time', [
             ['right', 'Right of the date and time'],
             ['left', 'Left of the date and time'],
@@ -120,11 +121,13 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             hideIdle,
             pixels('top-gap', 'Gap above', 'Pixels', 0, 40, 1),
         ]);
-        group(look, 'Size', null, [
+        group(look, 'Edit island size',
+            'The island sizes itself to each event. These widths are upper limits for longer content.', [
             height,
             idleWidth,
-            pixels('expanded-width', 'Media player width', 'Pixels, when hovering over music', 300, 640, 10),
-            pixels('notif-width', 'Notification width', 'Pixels', 260, 640, 10),
+            pixels('expanded-width', 'Media player maximum width', 'When hovering over music', 300, 640, 10),
+            pixels('notif-width', 'Event maximum width', 'Notifications and Copy & Go', 260, 640, 10),
+            pixels('notif-gap', 'Notification gap', 'Extra padding inside notifications', 0, 60, 1),
             pixels('max-radius', 'Corner roundness', '0 is square, 30 is fully round', 0, 40, 1),
         ]);
         group(look, 'Motion', null, [
@@ -139,10 +142,10 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             title: 'Notifications', icon_name: 'preferences-system-notifications-symbolic',
         });
         group(notif, 'Where they appear', null, [
-            toggle('suppress-gnome-banners', 'Only in the island',
-                'Hide GNOME’s own notification pop-ups while the island is on'),
+            toggle('suppress-gnome-banners', 'Stop GNOME banners — show notifications in the Island',
+                'Hides system notification banners while Custom Island is active, so they only appear here. Protected system prompts can still appear.'),
         ]);
-        group(notif, 'Which ones', 'Phone notifications from Notify Bridge count as normal notifications', [
+        group(notif, 'Which ones', 'Live activities (calls, navigation, timers) stay until they finish. Phone notifications from Notify Bridge count as normal notifications', [
             toggle('notif-respect-dnd', 'Respect Do Not Disturb',
                 'Off: show everything even in Do Not Disturb. Urgent ones always show'),
             toggle('notif-respect-app-settings', 'Respect per-app settings',
@@ -171,12 +174,18 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             toggle('show-charging', 'Show when the charger is plugged in'),
             chargeFor,
         ]);
+        group(more, 'Privacy & hotspot', null, [
+            toggle('privacy-indicators', 'Mic & camera in use',
+                'Orange mic / green camera pill while an app is using them'),
+            toggle('hotspot-devices', 'Hotspot devices',
+                'Show Wi-Fi hotspot on and how many devices are connected'),
+        ]);
 
         const linkFor = seconds('link-ms', 'Show for', 'Seconds', 1, 15, 0.5, 1);
         dependsOn(linkFor, 'copied-links');
-        group(more, 'Copy & links', 'Links inside notifications always get an Open button', [
-            toggle('copied-links', 'Copy suggestions',
-                'Copy something and the island offers to open, search or translate it'),
+        group(more, 'Copy & Go', 'Links inside notifications always get an Open button', [
+            toggle('copied-links', 'Copy & Go smart suggestions',
+                'Recognise copied links, emails and phone numbers and offer Open, Call, Message, New contact, Search or Translate'),
             linkFor,
         ]);
 

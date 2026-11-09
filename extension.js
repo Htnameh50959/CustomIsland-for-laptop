@@ -55,7 +55,7 @@ export default class CustomIslandExtension extends Extension {
     _scheduleRebuild() {
         if (this._rebuildId)
             GLib.source_remove(this._rebuildId);
-        this._rebuildId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 400, () => {
+        this._rebuildId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 120, () => {
             this._rebuildId = 0;
             this._destroyIsland();
             this._create();

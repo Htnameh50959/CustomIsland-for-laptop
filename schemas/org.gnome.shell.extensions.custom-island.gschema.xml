@@ -26,14 +26,18 @@
       <summary>Hide the island when there is nothing to show (below / beside-clock positions)</summary></key>
     <key name="top-gap" type="i"><range min="0" max="40"/><default>6</default>
       <summary>Gap above the island, in pixels</summary></key>
-    <key name="pill-height" type="i"><range min="22" max="56"/><default>32</default>
-      <summary>Island height when floating below the top bar, in pixels</summary></key>
-    <key name="idle-width" type="i"><range min="60" max="320"/><default>120</default>
-      <summary>Width of the empty/idle island</summary></key>
+    <key name="pill-height" type="i"><range min="0" max="56"/><default>32</default>
+      <summary>Island height in pixels (edit the size of the island)</summary></key>
+    <key name="idle-width" type="i"><range min="0" max="320"/><default>0</default>
+      <summary>Width of the empty/idle island in pixels (0 is a round dot)</summary></key>
     <key name="expanded-width" type="i"><range min="300" max="640"/><default>400</default>
-      <summary>Width of the expanded media player</summary></key>
+      <summary>Width of the expanded media player in pixels</summary></key>
     <key name="notif-width" type="i"><range min="260" max="640"/><default>380</default>
-      <summary>Width of a notification</summary></key>
+      <summary>Width of a notification in pixels</summary></key>
+    <key name="notif-gap" type="i"><range min="0" max="60"/><default>0</default>
+      <summary>Extra padding inside notifications, in pixels</summary></key>
+    <key name="status-width" type="i"><range min="180" max="420"/><default>260</default>
+      <summary>Width of status pills (privacy, hotspot and charging) in pixels</summary></key>
     <key name="max-radius" type="i"><range min="0" max="40"/><default>30</default>
       <summary>Corner roundness</summary></key>
     <key name="spring-ms" type="i"><range min="150" max="1500"/><default>620</default>
@@ -45,7 +49,7 @@
 
     <!-- notifications -->
     <key name="suppress-gnome-banners" type="b"><default>true</default>
-      <summary>Show notifications only in the island (hide GNOME's pop-ups)</summary></key>
+      <summary>Stop GNOME notification banners and show them in Custom Island instead</summary></key>
     <key name="notif-ms" type="i"><range min="1000" max="30000"/><default>4500</default>
       <summary>How long each notification stays, in milliseconds</summary></key>
     <key name="notif-queue-max" type="i"><range min="1" max="100"/><default>20</default>
@@ -64,8 +68,12 @@
       <summary>How long volume/brightness stays, in milliseconds</summary></key>
     <key name="show-charging" type="b"><default>true</default>
       <summary>Show when the charger is plugged in</summary></key>
+    <key name="privacy-indicators" type="b"><default>true</default>
+      <summary>Show when an app is using the microphone or camera</summary></key>
+    <key name="hotspot-devices" type="b"><default>true</default>
+      <summary>Show personal hotspot on and how many devices are connected</summary></key>
     <key name="copied-links" type="b"><default>true</default>
-      <summary>When something is copied, offer to open, search or translate it</summary></key>
+      <summary>Copy &amp; Go: recognise copied links, emails and phone numbers and suggest actions</summary></key>
     <key name="link-ms" type="i"><range min="1000" max="15000"/><default>5000</default>
       <summary>How long the copy suggestions stay, in milliseconds</summary></key>
     <key name="charge-ms" type="i"><range min="500" max="15000"/><default>3000</default>

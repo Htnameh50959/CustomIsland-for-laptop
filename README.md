@@ -6,14 +6,17 @@ Works on GNOME Shell 46, 47 and 48 (Ubuntu 24.04 and newer, Fedora 40 and newer)
 
 ## What it does
 
-| When… | The island… |
+| Feature | What it does |
 |---|---|
-| Music is playing (Spotify, a browser, VLC, any MPRIS player) | shows the album art and a moving equalizer. Hover to open a full player with title, progress bar and play / pause / next / previous. Scroll on it to change track. |
-| A notification arrives | shows it with the app icon. Click to open it. The newest notification always takes over at once; a "· 3 NEW" label shows when several came in a row. Older ones stay in GNOME's notification list. |
-| A notification contains a link | adds a blue link chip under the text. Click it to open the link. |
-| You copy something | offers what to do with it: **Open** a link, **Write** to an email address, or **Search** / **Translate** any other text. Text that looks like a password is shown as dots. |
-| You change the volume or brightness | shows the level instead of GNOME's pop-up. |
-| You plug in the charger | shows "Charging" and the battery level. |
+| Music playback | Album art and equalizer for any MPRIS player (Spotify, browser, VLC…). Hover for the full player; scroll to change track. |
+| Timer & stopwatch | Clock / timer notifications stay as a live activity until they finish. |
+| Navigation | Maps / navigation notifications stay until the route ends. |
+| Call status | Phone / call notifications stay on the island while the call is active. |
+| Notifications | Show with the app icon. Click to open. The newest takes over at once; "· 3 NEW" when several arrive. Turn on **Stop GNOME banners** so they only appear in the Island. |
+| Copy & Go | Recognises copied links, emails and phone numbers and offers **Open**, **Write**, **Call / Message / New contact**, or **Search / Translate**. Passwords are shown as dots. |
+| Smart suggestions | Action buttons for whatever you just copied. |
+| Volume / brightness | Replaces GNOME's OSD pop-up. |
+| Charging | Shows "Charging" and the battery level. |
 
 Every pop-out has a **✕** button to close it.
 
@@ -90,9 +93,9 @@ Most often this is an unsupported GNOME version. Check yours with `gnome-shell -
 
 **The island is there but I don't see it.** With "Float below the top bar" and "Hide when there's nothing to show" on, it only appears when something happens. Play some music or copy a link to test it.
 
-**Notifications don't show.** Check that Do Not Disturb is off, or turn off "Respect Do Not Disturb" in the settings.
+**Notifications don't show.** Check that Do Not Disturb is off, or turn off "Respect Do Not Disturb" in the settings. To hide GNOME's own banners, keep **Stop GNOME banners — show notifications in the Island** on.
 
-**Copy suggestions don't show.** They're skipped while a fullscreen app is in front. Make sure "Copy suggestions" is on in **Settings → Volume & more**.
+**Copy & Go doesn't show.** Skipped while a fullscreen app is in front. Make sure **Copy & Go smart suggestions** is on in **Settings → Volume & more**.
 
 **I changed something and nothing happened.** Most settings apply at once. Position and size settings rebuild the island, which takes a moment.
 
