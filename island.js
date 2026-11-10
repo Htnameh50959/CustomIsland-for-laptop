@@ -1539,7 +1539,9 @@ class Island extends St.Widget {
 
     _classifyLiveNotification(n) {
         const plain = s => (s ?? '').replace(/<[^>]*>/g, ' ').toLowerCase();
-        const app = plain(n.source?.title);
+        // NotifyBridge names forwarded apps "WhatsApp (phone)": that marks the
+        // device, not a call, so drop it before matching app names.
+        const app = plain(n.source?.title).replace(/\s*\(phone\)\s*$/, '').trim();
         const text = [app, n.title, n.body].map(plain).join(' ');
         if (/\b(timer|stopwatch|countdown|alarm)\b/.test(text) || /\b(clock|timers?)\b/.test(app))
             return 'TIMER';
@@ -1547,7 +1549,7 @@ class Island extends St.Widget {
             /\b(maps?|waze|navigation)\b/.test(app))
             return 'NAVIGATION';
         if (/\b(incoming call|ongoing call|in call|call in progress|calling|ringing)\b/.test(text) ||
-            /\b(phone|calls?|dialer|telecom)\b/.test(app))
+            /^(phone|calls?|dialer|telecom|phone services)$/.test(app))
             return 'CALL';
         // Sticky / resident notifications often are live activities.
         if (n.resident || n.isResident)
