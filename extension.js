@@ -1,9 +1,27 @@
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Island, CONFIG} from './island.js';
 import {SCHEMA, KEYS, readKey, migrateSettings} from './keys.js';
+
+// GNOME switches extensions off on the lock screen and back on after unlocking,
+// so how you unlocked is remembered here, outside the island. The fingerprint
+// service announces a match (VerifyStatus "verify-match"); if one came just
+// before the unlock it was the fingerprint, otherwise the password.
+const unlock = {lockedAt: 0, fingerprintAt: 0, sub: 0};
+
+function watchFingerprint() {
+    if (unlock.sub)
+        return;
+    unlock.sub = Gio.DBus.system.signal_subscribe(null, 'net.reactivated.Fprint.Device', 'VerifyStatus',
+        null, null, Gio.DBusSignalFlags.NONE, (_c, _s, _p, _i, _sig, params) => {
+            const [result] = params.deep_unpack();
+            if (result === 'verify-match')
+                unlock.fingerprintAt = Date.now();
+        });
+}
 
 export default class CustomIslandExtension extends Extension {
     enable() {
@@ -41,6 +59,17 @@ export default class CustomIslandExtension extends Extension {
         // sit just above the top bar, but below popup menus
         Main.layoutManager.uiGroup.set_child_above_sibling(this._island, Main.layoutManager.panelBox);
         this._island.start();
+        // back from the lock screen: show what unlocked it
+        if (unlock.lockedAt && !Main.sessionMode.isLocked) {
+            const fp = unlock.fingerprintAt > unlock.lockedAt && Date.now() - unlock.fingerprintAt < 20000;
+            unlock.lockedAt = 0;
+            const island = this._island;
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
+                if (this._island === island)
+                    island.showUnlocked(fp ? 'fingerprint' : 'password');
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 
     _destroyIsland() {
@@ -64,6 +93,10 @@ export default class CustomIslandExtension extends Extension {
     }
 
     disable() {
+        if (Main.sessionMode.isLocked) {
+            unlock.lockedAt = Date.now();
+            watchFingerprint(); // stays on while locked, to hear the fingerprint match
+        }
         if (this._startupId) {
             Main.layoutManager.disconnect(this._startupId);
             this._startupId = 0;

@@ -12,7 +12,7 @@ Works on GNOME Shell 46, 47 and 48 (Ubuntu 24.04 and newer, Fedora 40 and newer)
 | Timer & stopwatch | Clock / timer notifications stay as a live activity until they finish. |
 | Navigation | Maps / navigation notifications stay until the route ends. |
 | Call status | Phone / call notifications stay on the island while the call is active. |
-| Notifications | Show with the app icon. Click to open. The newest takes over at once; "· 3 NEW" when several arrive. Turn on **Stop GNOME banners** so they only appear in the Island. |
+| Notifications | Show the sender's picture with the app's icon on its corner. Click to expand (Clear, Open and the app's own buttons), click again to open the app; right-click for the controls. Notifications that arrive together wait their turn ("· 2 MORE"); scroll over the island to skip to the next. Turn on **Stop GNOME banners** so they only appear in the Island. |
 | Copy & Go | Recognises copied links, emails and phone numbers and offers **Open**, **Write**, **Call / Message / New contact**, or **Search / Translate**. Passwords are shown as dots. |
 | Smart suggestions | Action buttons for whatever you just copied. |
 | Volume / brightness | Replaces GNOME's OSD pop-up. |

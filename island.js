@@ -48,6 +48,7 @@ export const CONFIG = {
     HOVER_COLLAPSE_MS: 380,
     OSD_MS: 1600,
     NOTIF_MS: 4500,
+    NOTIF_MIN_READ_MS: 1800, // a pop-up stays at least this long before the next one replaces it
     LIVE_MS: 4500,      // sticky live activities auto-close after this
     CHARGE_MS: 3000,
     SPRING_MS: 620,
@@ -196,6 +197,8 @@ class Island extends St.Widget {
             compact: this._buildCompact(),
             expanded: this._buildExpanded(),
             osd: this._buildOsd(),
+            transfer: this._buildTransfer(),
+            status: this._buildStatus(),
             notif: this._buildNotif(),
             charge: this._buildCharge(),
             link: this._buildLink(),
@@ -234,6 +237,8 @@ class Island extends St.Widget {
         this._setupOsd();
         this._setupNotifications();
         this._setupBattery();
+        this._setupBluetooth();
+        this._setupDnd();
         this._setupClipboard();
         this._setupPrivacy();
         this._mpris = new MprisWatcher(() => this._onPlayersChanged());
@@ -419,7 +424,17 @@ class Island extends St.Widget {
             style_class: 'ci-view',
             style: `padding: ${14 + gap}px ${18 + gap}px; spacing: 14px;`,
         });
-        this._notifIcon = new St.Icon({icon_size: 36, y_align: Clutter.ActorAlign.CENTER});
+        // Sender's picture with the app's icon on its corner (or just the app icon).
+        this._notifIcon = new St.Icon({icon_size: 40});
+        this._notifBadge = new St.Icon({style_class: 'ci-notif-badge', icon_size: 16, visible: false});
+        const iconBox = new St.Widget({
+            width: 46, height: 46, y_align: Clutter.ActorAlign.START,
+            layout_manager: new Clutter.BinLayout(),
+        });
+        iconBox.add_child(this._notifIcon);
+        this._notifIcon.set({x_align: Clutter.ActorAlign.START, y_align: Clutter.ActorAlign.START});
+        iconBox.add_child(this._notifBadge);
+        this._notifBadge.set({x_align: Clutter.ActorAlign.END, y_align: Clutter.ActorAlign.END});
         const text = new St.BoxLayout({vertical: true, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
         this._notifApp = this._label('ci-notif-app');
         this._notifTitle = this._wrapLabel('ci-notif-title');
@@ -439,7 +454,10 @@ class Island extends St.Widget {
             this._endActivity();
         });
         text.add_child(this._notifLink);
-        v.add_child(this._notifIcon);
+        // the notification's own buttons ("Reply", "Mark as read", "Snooze"…)
+        this._notifActions = new St.BoxLayout({style_class: 'ci-notif-actions', visible: false});
+        text.add_child(this._notifActions);
+        v.add_child(iconBox);
         v.add_child(text);
         const close = this._closeButton();
         this._notifClose = close;
@@ -589,9 +607,10 @@ class Island extends St.Widget {
             this._naturalWidth(this._notifApp),
             this._naturalWidth(this._notifTitle),
             this._naturalWidth(this._notifBody),
-            this._naturalWidth(this._notifLink)
+            this._naturalWidth(this._notifLink),
+            this._notifActions.visible ? this._naturalWidth(this._notifActions) : 0
         );
-        const chrome = 36 + this._naturalWidth(this._notifClose) + 36 + 2 * 14;
+        const chrome = 36 + this._naturalWidth(this._notifClose) + 46 + 2 * 14;
         this._setContentWidth('notif', chrome + text, 220, CONFIG.NOTIF_WIDTH);
     }
 
@@ -776,7 +795,7 @@ class Island extends St.Widget {
     }
 
     _showActivity(kind, ms, sticky = false) {
-        if (kind !== 'notif' && this._activity?.kind === 'notif' && this._notification)
+        if (kind !== 'notif' && this._activity?.kind === 'notif' && this._notification && !this._notifGone)
             this._queueNotification(this._notification); // show it again afterwards
         this._activityTimer = this._cancel(this._activityTimer);
         this._activity = {kind, sticky};
@@ -808,16 +827,34 @@ class Island extends St.Widget {
             }
         };
         this._notifHold = 0;
+        this._activityExpire = expire;
         this._activityTimer = this._after(sticky ? CONFIG.LIVE_MS : ms, expire);
         this._render();
     }
 
-    _endActivity() {
+    // Close what's showing sooner (another notification is waiting).
+    _shortenActivity(ms) {
+        if (!this._activity || !this._activityExpire)
+            return;
+        this._activityTimer = this._cancel(this._activityTimer);
+        this._activityTimer = this._after(Math.max(0, ms), this._activityExpire);
+    }
+
+    // `pause`: let the island fold away before the next waiting notification grows out.
+    _endActivity(pause = 0) {
         this._activityTimer = this._cancel(this._activityTimer);
         this._activity = null;
         this._notification = null;
         this._render();
-        this._nextNotification();
+        this._nextTimer = this._cancel(this._nextTimer);
+        if (pause > 0) {
+            this._nextTimer = this._after(pause, () => {
+                this._nextTimer = 0;
+                this._nextNotification();
+            });
+        } else {
+            this._nextNotification();
+        }
     }
 
     // equalizer + progress loops only run while visible & playing
@@ -891,12 +928,14 @@ class Island extends St.Widget {
                 this._openCopied();
                 break;
             case 'notif':
-                try {
-                    this._notification?.activate();
-                } catch (e) {
-                    console.warn(`[custom-island] activate: ${e.message}`);
-                }
-                this._endActivity();
+                // Click opens the activity (the full card with its buttons);
+                // a click on the open card goes to the app. Right-click: controls.
+                if (this._notifPrompt)
+                    break; // answer with its buttons, not by clicking the text
+                if (button === 3 || !this._notifExpanded)
+                    this._expandNotification();
+                else
+                    this._openNotification();
                 break;
             default:
                 this._endActivity();
@@ -905,6 +944,15 @@ class Island extends St.Widget {
         });
 
         this.connect('scroll-event', (_a, event) => {
+            // Scrolling over a notification moves on to the next waiting one.
+            if (this._activity?.kind === 'notif' && this._notifQueue.length) {
+                const now = GLib.get_monotonic_time() / 1000;
+                if (now - (this._lastNotifScroll ?? 0) > 400) {
+                    this._lastNotifScroll = now;
+                    this._endActivity();
+                }
+                return Clutter.EVENT_STOP;
+            }
             if (!this._player || this._activity)
                 return Clutter.EVENT_PROPAGATE;
             const dir = event.get_scroll_direction();
@@ -1053,6 +1101,179 @@ class Island extends St.Widget {
         patch('showOne', 1);
     }
 
+    // ------------------------------------------------------------ status --
+    // A short status, like the phone's: icon · name ············ value
+    // (earbuds connected / battery, Do Not Disturb, how you unlocked)
+    _buildStatus() {
+        const v = new St.BoxLayout({style_class: 'ci-view', height: this._H + 8, style: 'padding: 0 16px 0 12px; spacing: 10px;'});
+        this._statusIcon = new St.Icon({icon_size: 16, y_align: Clutter.ActorAlign.CENTER});
+        this._statusTitle = this._label('ci-osd-label');
+        this._statusValue = this._label('ci-status-value', {x_expand: true, x_align: Clutter.ActorAlign.END});
+        this._statusValue.clutter_text.line_alignment = Pango.Alignment.RIGHT;
+        v.add_child(this._statusIcon);
+        v.add_child(this._statusTitle);
+        v.add_child(new St.Widget({width: 28})); // breathing room between name and value
+        v.add_child(this._statusValue);
+        return v;
+    }
+
+    showStatus({icon, color = '#ffffff', title, value, valueColor = color, ms = 2600}) {
+        this._statusIcon.gicon = icon;
+        this._statusIcon.set_style(`color: ${color};`);
+        this._statusTitle.text = title;
+        this._statusValue.text = value;
+        this._statusValue.set_style(`color: ${valueColor};`);
+        this._statusTitleShown = title;
+        // a notification on screen keeps its turn
+        if (this._activity && this._activity.kind === 'notif')
+            return;
+        this._showActivity('status', ms);
+    }
+
+    // What unlocked the computer (extension.js tells us when we come back after the lock screen).
+    showUnlocked(method) {
+        const fp = method === 'fingerprint';
+        this.showStatus({
+            icon: Gio.ThemedIcon.new_from_names(fp
+                ? ['auth-fingerprint-symbolic', 'fingerprint-detection-symbolic']
+                : ['dialog-password-symbolic', 'changes-allow-symbolic']),
+            color: '#30d158', title: 'Unlocked', value: fp ? 'Fingerprint' : 'Password', ms: 1800,
+        });
+    }
+
+    // Earbuds, headphones, speakers, mice and keyboards: not phones or computers
+    // (Notify Bridge keeps the phone connected all the time; that's not news).
+    _setupBluetooth() {
+        this._btSeen = new Map(); // "connected|name" → time, so one connection shows once
+        this._btConnectedAt = 0;
+        this._btName = null;
+        const bus = Gio.DBus.system;
+        this._btSub = bus.signal_subscribe('org.bluez', 'org.freedesktop.DBus.Properties', 'PropertiesChanged',
+            null, null, Gio.DBusSignalFlags.NONE, (_c, _s, path, _i, _sig, params) => {
+                const [iface, changed] = params.deep_unpack();
+                if (iface === 'org.bluez.Device1' && 'Connected' in changed)
+                    this._onBluetooth(path, changed.Connected.deep_unpack());
+                else if (iface === 'org.bluez.Battery1' && 'Percentage' in changed)
+                    this._onBtBattery(path, changed.Percentage.deep_unpack());
+            });
+    }
+
+    _onBluetooth(path, connected) {
+        Gio.DBus.system.call('org.bluez', path, 'org.freedesktop.DBus.Properties', 'GetAll',
+            new GLib.Variant('(s)', ['org.bluez.Device1']), null, Gio.DBusCallFlags.NONE, 2000, null, (c, res) => {
+                let props;
+                try {
+                    props = c.call_finish(res).deep_unpack()[0];
+                } catch (e) {
+                    return;
+                }
+                const kind = props.Icon?.deep_unpack() ?? '';
+                if (!kind || /phone|computer|network/.test(kind))
+                    return;
+                const name = props.Alias?.deep_unpack() || props.Name?.deep_unpack() || 'Bluetooth device';
+                // the two buds (and each audio profile) connect separately: show it once
+                const key = `${connected}|${name}`;
+                const now = GLib.get_monotonic_time() / 1000;
+                if (now - (this._btSeen.get(key) ?? 0) < 15000)
+                    return;
+                this._btSeen.set(key, now);
+                const audio = /audio|head/.test(kind);
+                const icon = themed(audio ? 'audio-headphones-symbolic'
+                    : /keyboard/.test(kind) ? 'input-keyboard-symbolic'
+                        : /mouse|tablet/.test(kind) ? 'input-mouse-symbolic' : 'bluetooth-active-symbolic');
+                if (connected) {
+                    this._btConnectedAt = now;
+                    this._btName = name;
+                    this._btPath = path;
+                    this.showStatus({icon, color: '#0a84ff', title: name, value: 'Connected', ms: 2800});
+                    // the battery level usually comes a moment later: fill it into the same pill
+                    this._after(2500, () => this._readBtBattery(path));
+                } else {
+                    this.showStatus({icon, color: '#8e8e93', title: name, value: 'Disconnected'});
+                }
+            });
+    }
+
+    _readBtBattery(path) {
+        Gio.DBus.system.call('org.bluez', path, 'org.freedesktop.DBus.Properties', 'Get',
+            new GLib.Variant('(ss)', ['org.bluez.Battery1', 'Percentage']), null, Gio.DBusCallFlags.NONE, 2000, null,
+            (c, res) => {
+                try {
+                    this._onBtBattery(path, c.call_finish(res).deep_unpack()[0].deep_unpack());
+                } catch (e) {
+                    // no battery reported
+                }
+            });
+    }
+
+    _onBtBattery(path, level) {
+        const now = GLib.get_monotonic_time() / 1000;
+        // only fill in the pill that's still up; never open a second one
+        if (path !== this._btPath || now - this._btConnectedAt > 8000 || this._current !== 'status' ||
+            this._statusTitleShown !== this._btName)
+            return;
+        this._statusValue.text = `${level}%`;
+        this._statusValue.set_style(`color: ${level <= 20 ? '#ff453a' : '#30d158'};`);
+        this._render();
+    }
+
+    _setupDnd() {
+        this._notifSettings.connectObject('changed::show-banners', () => {
+            const on = !this._notifSettings.get_boolean('show-banners');
+            this.showStatus({
+                icon: themed(on ? 'notifications-disabled-symbolic' : 'preferences-system-notifications-symbolic'),
+                color: on ? '#5e5ce6' : '#8e8e93', title: 'Do Not Disturb', value: on ? 'On' : 'Off',
+            });
+        }, this);
+    }
+
+    // ---------------------------------------------------------- transfer --
+    // Files moving between this computer and the phone (Notify Bridge):
+    // ↑/↓  To phone · 3 files  [━━━━━━──]  62%  86 Mbit/s
+    _buildTransfer() {
+        const v = new St.BoxLayout({style_class: 'ci-view', height: this._H + 8, style: 'padding: 0 16px; spacing: 10px;'});
+        this._xferIcon = new St.Icon({icon_size: 16, y_align: Clutter.ActorAlign.CENTER});
+        this._xferLabel = this._label('ci-osd-label');
+        this._xferTrack = new St.Widget({style_class: 'ci-track', width: 110, y_align: Clutter.ActorAlign.CENTER});
+        this._xferFill = new St.Widget({style_class: 'ci-fill', width: 0});
+        this._xferTrack.add_child(this._xferFill);
+        this._xferPercent = this._label('ci-percent', {x_align: Clutter.ActorAlign.END});
+        this._xferSpeed = this._label('ci-xfer-speed');
+        v.add_child(this._xferIcon);
+        v.add_child(this._xferLabel);
+        v.add_child(this._xferTrack);
+        v.add_child(this._xferPercent);
+        v.add_child(this._xferSpeed);
+        return v;
+    }
+
+    showTransfer(t) {
+        const sending = t.direction === 'send';
+        const finished = !!t.finished;
+        const frac = t.total > 0 ? Math.min(1, t.done / t.total) : 0;
+        this._xferIcon.icon_name = finished
+            ? (t.failed ? 'dialog-error-symbolic' : 'object-select-symbolic')
+            : (sending ? 'go-up-symbolic' : 'go-down-symbolic');
+        const peer = t.peer || 'phone';
+        const files = t.files > 1 ? ` · ${t.files} files` : '';
+        this._xferLabel.text = finished
+            ? `${t.failed ? 'Not ' : ''}${sending ? 'Sent' : 'Received'}${files}`
+            : `${sending ? 'To' : 'From'} ${peer}${files}`;
+        this._xferPercent.text = `${Math.round(frac * 100)}%`;
+        this._xferSpeed.text = finished ? '' : (t.speed || '');
+        this._xferSpeed.visible = !finished && !!t.speed;
+        this._xferFill.set_style(finished && !t.failed ? 'background-color: #30d158;' : t.failed ? 'background-color: #ff453a;' : '');
+        const w = Math.round(110 * (finished && !t.failed ? 1 : frac));
+        if (this._current === 'transfer')
+            this._xferFill.ease({width: w, duration: 400, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        else
+            this._xferFill.width = w;
+        // a notification on screen keeps its turn; the transfer comes back after it
+        if (this._activity && this._activity.kind !== 'transfer' && !finished)
+            return;
+        this._showActivity('transfer', finished ? 2600 : 5000);
+    }
+
     showOsd(icon, label, level, maxLevel) {
         this._osdIcon.gicon = icon ?? themed('audio-volume-high-symbolic');
         const hasLevel = typeof level === 'number' && level >= 0;
@@ -1116,11 +1337,52 @@ class Island extends St.Widget {
             this._queueNotification(n);
             return;
         }
-        // Like iOS, the newest notification always takes over at once. The one
-        // it replaces is still in GNOME's notification list (the clock menu).
-        const replacing = this._activity?.kind === 'notif' && !!this._notification && this._notification !== n;
-        this._burst = replacing ? this._burst + 1 : 1;
-        this._presentNotification(n, replacing);
+        const showing = this._activity?.kind === 'notif' && !!this._notification && this._notification !== n;
+        // A pop-up that only just appeared is read first; this one waits its turn
+        // instead of wiping it away (the old behaviour lost the first of two
+        // messages that came in together).
+        if (showing && !this._liveNotification && n.urgency !== Urgency.CRITICAL &&
+            GLib.get_monotonic_time() / 1000 - this._notifShownAt < CONFIG.NOTIF_MIN_READ_MS) {
+            this._queueNotification(n);
+            this._showMoreCount();
+            this._shortenActivity(this._notifShownAt + CONFIG.NOTIF_MIN_READ_MS - GLib.get_monotonic_time() / 1000);
+            return;
+        }
+        this._burst = 1;
+        this._presentNotification(n, showing);
+    }
+
+    // "· 2 MORE" next to the app name while others are waiting
+    _showMoreCount() {
+        if (this._current !== 'notif' || !this._notification)
+            return;
+        this._fillHeader(this._notification);
+        this._render();
+    }
+
+    // Open the app the notification came from and fold the island back.
+    _openNotification() {
+        const n = this._notification;
+        const app = this._notifSourceApp;
+        let opened = false;
+        try {
+            if (n && !this._notifGone) {
+                n.activate();
+                opened = true;
+            }
+        } catch (e) {
+            console.warn(`[custom-island] activate: ${e.message}`);
+        }
+        // The app already withdrew it (chat read elsewhere, transient pop-up…):
+        // clicking should still take you to the app.
+        if (!opened && app) {
+            try {
+                app.activate();
+            } catch (e) {
+                console.warn(`[custom-island] open app: ${e.message}`);
+            }
+        }
+        this._endActivity(650);
     }
 
     _isFullscreen() {
@@ -1138,36 +1400,136 @@ class Island extends St.Widget {
             this._notifQueue.shift().disconnectObject?.(this);
     }
 
-    // Show only the newest of what was held back; the count says how many came.
+    // Waiting notifications show one after another. A long backlog (held back
+    // while a fullscreen app was in front) shows just the newest with a count.
     _nextNotification() {
         if (this._activity || this._isFullscreen())
             return;
-        const held = this._notifQueue.filter(n => !n.acknowledged && n.source);
-        this._notifQueue.forEach(n => n.disconnectObject?.(this));
-        this._notifQueue = [];
-        if (!held.length)
+        this._notifQueue = this._notifQueue.filter(n => !n.acknowledged && n.source);
+        if (!this._notifQueue.length)
             return;
-        this._burst = held.length;
-        this._presentNotification(held[held.length - 1], false);
+        let next;
+        if (this._notifQueue.length > 3) {
+            this._burst = this._notifQueue.length;
+            next = this._notifQueue[this._notifQueue.length - 1];
+            this._notifQueue.forEach(n => n.disconnectObject?.(this));
+            this._notifQueue = [];
+        } else {
+            this._burst = 1;
+            next = this._notifQueue.shift();
+            next.disconnectObject?.(this);
+        }
+        this._presentNotification(next, false);
     }
 
     _fillNotification(n) {
         const strip = s => (s ?? '').replace(/<[^>]*>/g, '').replace(/\s*\n\s*/g, ' ').trim();
-        this._notifIcon.gicon = n.gicon ?? n.source?.icon ?? themed('preferences-system-notifications-symbolic');
+        // The sender's picture with the app's icon on its corner, like the phone.
+        const appIcon = n.source?.icon ?? null;
+        const picture = n.gicon ?? null;
+        const both = picture && appIcon && !picture.equal(appIcon);
+        this._notifIcon.gicon = picture ?? appIcon ?? themed('preferences-system-notifications-symbolic');
+        this._notifBadge.gicon = both ? appIcon : null;
+        this._notifBadge.visible = !!both;
         this._liveNotification = this._classifyLiveNotification(n);
-        const app = (n.source?.title ?? '').toUpperCase();
-        const activity = this._liveNotification ? 'LIVE · ' + this._liveNotification : app;
-        const more = this._burst > 1 ? this._burst + ' NEW' : '';
-        this._notifApp.text = [activity, more].filter(Boolean).join('  ·  ');
-        this._notifApp.visible = !!this._notifApp.text;
-        this._notifTitle.text = strip(n.title);
+        this._fillHeader(n);
+        // Phone notifications (Notify Bridge) put "WhatsApp · Mom" in the title;
+        // the app is already in the header, so show just "Mom".
+        const source = (n.source?.title ?? '').replace(/\s*\(phone\)$/i, '');
+        let title = strip(n.title);
+        if (source && title.startsWith(`${source} · `))
+            title = title.slice(source.length + 3);
+        this._notifTitle.text = title;
         // keep the message's own line breaks; only the markup and extra blank lines go
         this._notifBody.text = (n.body ?? '').replace(/<[^>]*>/g, '').replace(/[ \t]*\n[ \t]*/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
         this._notifBody.visible = !!this._notifBody.text;
         this._notifUrl = this._findUrl(n.body, n.title);
         this._notifLinkLabel.text = this._notifUrl ? this._prettyUrl(this._notifUrl) : '';
         this._notifLink.visible = !!this._notifUrl;
+        this._fillActions(n);
         this._fitNotification();
+    }
+
+    _fillHeader(n) {
+        const app = (n.source?.title ?? '').toUpperCase();
+        const activity = this._liveNotification ? 'LIVE · ' + this._liveNotification : app;
+        const waiting = this._notifQueue.length;
+        const more = waiting > 0 ? `${waiting} MORE`
+            : this._burst > 1 ? `${this._burst} NEW` : '';
+        this._notifApp.text = [activity, more].filter(Boolean).join('  ·  ');
+        this._notifApp.visible = !!this._notifApp.text;
+    }
+
+    // The open card's buttons: the app's own (Reply, Mark as read…), Clear, Open.
+    _fillActions(n) {
+        this._notifActions.destroy_all_children();
+        if (!this._notifExpanded) {
+            this._notifActions.visible = false;
+            return;
+        }
+        if (this._notifPrompt) {
+            // just its own answers; the last one ("Accept") is the main button
+            const own = (n.actions ?? []).slice(0, 3);
+            own.forEach((action, i) => {
+                const b = new St.Button({
+                    style_class: i === own.length - 1 ? 'ci-notif-action ci-notif-action-primary' : 'ci-notif-action',
+                    can_focus: true, label: action.label,
+                });
+                b.connect('clicked', () => {
+                    try {
+                        action.activate();
+                    } catch (e) {
+                        console.warn(`[custom-island] ${action.label}: ${e.message}`);
+                    }
+                    this._endActivity(400);
+                });
+                this._notifActions.add_child(b);
+            });
+            this._notifActions.visible = own.length > 0;
+            return;
+        }
+        const button = (label, primary, run) => {
+            const b = new St.Button({
+                style_class: primary ? 'ci-notif-action ci-notif-action-primary' : 'ci-notif-action',
+                can_focus: true, label,
+            });
+            b.connect('clicked', () => {
+                try {
+                    run();
+                } catch (e) {
+                    console.warn(`[custom-island] ${label}: ${e.message}`);
+                }
+            });
+            this._notifActions.add_child(b);
+        };
+        const alive = !this._notifGone;
+        if (alive) {
+            for (const action of (n.actions ?? []).slice(0, 2)) {
+                button(action.label, false, () => {
+                    action.activate();
+                    this._endActivity(650);
+                });
+            }
+        }
+        button('Clear', false, () => {
+            if (alive && !this._liveNotification)
+                n.destroy();
+            this._endActivity();
+        });
+        button('Open', true, () => this._openNotification());
+        this._notifActions.visible = true;
+    }
+
+    _expandNotification() {
+        const n = this._notification;
+        if (!n)
+            return;
+        this._notifExpanded = true;
+        this._fillActions(n);
+        this._fitNotification();
+        this._kick();
+        this._render();
+        this._shortenActivity(9000); // stays while you read it
     }
 
     _classifyLiveNotification(n) {
@@ -1190,6 +1552,11 @@ class Island extends St.Widget {
 
     _presentNotification(n, replacing) {
         const v = this._views.notif;
+        // A question that needs an answer (urgent, with buttons, e.g. "Accept
+        // files?") opens straight away with its buttons and waits for you.
+        this._notifPrompt = n.urgency === Urgency.CRITICAL && (n.actions?.length ?? 0) > 0;
+        this._notifExpanded = this._notifPrompt; // others start folded
+        this._notifGone = false;
         if (replacing && this._current === 'notif') {
             // old text fades out, new text fades in, and the island gives a little bounce
             v.remove_all_transitions();
@@ -1212,18 +1579,29 @@ class Island extends St.Widget {
             this._fillNotification(n);
         }
         this._notification = n;
-        // the app may close it while it's on screen; forget it so a click can't touch a dead object
+        this._notifGone = false;
+        this._notifExpanded = false;
+        this._notifSourceApp = n.source?.app ?? null;
+        this._notifShownAt = GLib.get_monotonic_time() / 1000;
+        // The app may withdraw it while it's on screen. Keep showing it until it
+        // times out (a quick chat notification shouldn't vanish before you read
+        // it), but don't touch the dead object: a click opens the app instead.
         n.connectObject('destroy', () => {
             if (this._notification !== n)
                 return;
-            this._notification = null;
+            this._notifGone = true;
             if (this._activity?.kind === 'notif' && this._activity.sticky)
                 this._endActivity();
         }, this);
         // Calls, navigation and timers are live activities: they stay up until their
         // notification is withdrawn; ordinary notifications use a readable timeout.
         const chars = (n.title?.length ?? 0) + (n.body?.length ?? 0);
-        this._showActivity('notif', Math.min(CONFIG.NOTIF_MS + Math.max(0, chars - 60) * 45, 14000), !!this._liveNotification);
+        let ms = Math.min(CONFIG.NOTIF_MS + Math.max(0, chars - 60) * 45, 14000);
+        if (this._notifQueue.length)
+            ms = Math.min(ms, 3000); // others are waiting
+        if (this._notifPrompt)
+            ms = 60000; // waits for an answer, even with others waiting
+        this._showActivity('notif', ms, !!this._liveNotification);
     }
 
     // a quick swell-and-settle, like the island reacting to something new
@@ -1279,10 +1657,68 @@ class Island extends St.Widget {
     // Like OriginOS: copy a link or an email address and the island offers to open it.
     _setupClipboard() {
         global.display.get_selection().connectObject('owner-changed', (_sel, type) => {
-            if (type !== Meta.SelectionType.SELECTION_CLIPBOARD || !CONFIG.COPIED_LINKS)
+            if (type !== Meta.SelectionType.SELECTION_CLIPBOARD)
                 return;
-            St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_c, text) => this._onCopied(text));
+            St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_c, text) => {
+                // Clipboard sync: what you copy here goes to the phone (Notify Bridge).
+                if (text && text !== this._fromPhone)
+                    this._sendClipboardToPhone(text);
+                if (CONFIG.COPIED_LINKS)
+                    this._onCopied(text);
+            });
         }, this);
+
+        // Notify Bridge puts the phone's copies on this computer's clipboard through
+        // here (GNOME doesn't let a background app set the clipboard on Wayland).
+        const xml = `<node><interface name="in.staad.CustomIsland">
+            <method name="SetClipboard"><arg type="s" direction="in" name="text"/></method>
+            <method name="Transfer"><arg type="s" direction="in" name="state"/></method>
+        </interface></node>`;
+        this._dbus = Gio.DBusExportedObject.wrapJSObject(xml, {
+            SetClipboard: text => {
+                this._fromPhone = text;
+                St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
+            },
+            Transfer: json => {
+                try {
+                    this.showTransfer(JSON.parse(json));
+                } catch (e) {
+                    console.warn(`[custom-island] transfer: ${e.message}`);
+                }
+            },
+        });
+        try {
+            this._dbus.export(Gio.DBus.session, '/in/staad/CustomIsland');
+        } catch (e) {
+            console.warn(`[custom-island] D-Bus export: ${e.message}`);
+            this._dbus = null;
+        }
+    }
+
+    // Hand copied text to the Phone Notify receiver, if it's running.
+    _sendClipboardToPhone(text) {
+        const path = GLib.build_filenamev([GLib.get_user_runtime_dir(), 'phone-notify.sock']);
+        if (!GLib.file_test(path, GLib.FileTest.EXISTS) || text.length > 100000)
+            return;
+        const line = JSON.stringify({cmd: 'clipboard', text}) + '\n';
+        const client = new Gio.SocketClient();
+        client.connect_async(Gio.UnixSocketAddress.new(path), null, (c, res) => {
+            let conn;
+            try {
+                conn = c.connect_finish(res);
+            } catch (e) {
+                return; // receiver not running
+            }
+            conn.get_output_stream().write_bytes_async(
+                new GLib.Bytes(new TextEncoder().encode(line)), GLib.PRIORITY_DEFAULT, null, (o, r) => {
+                    try {
+                        o.write_bytes_finish(r);
+                    } catch (e) {
+                        console.warn(`[custom-island] clipboard to phone: ${e.message}`);
+                    }
+                    conn.close_async(GLib.PRIORITY_DEFAULT, null, null);
+                });
+        });
     }
 
     // Copy & Go: recognise links, emails, phone numbers and plain text.
@@ -1290,9 +1726,11 @@ class Island extends St.Widget {
         const t = (text ?? '').trim();
         if (!t || t.length > 20000 || this._isFullscreen())
             return;
-        // the same thing copied again a moment later isn't news
+        // GNOME reports each copy once (some apps twice in a row): only a repeat
+        // within a second is the same copy. Copying the same text again later is
+        // a new copy and shows the island again.
         const now = GLib.get_monotonic_time();
-        if (t === this._copiedText && now - (this._copiedAt ?? 0) < 30e6)
+        if (t === this._copiedText && now - (this._copiedAt ?? 0) < 1e6)
             return;
         this._copiedText = t;
         this._copiedAt = now;
@@ -1325,7 +1763,7 @@ class Island extends St.Widget {
             ];
         }
         this._linkIcon.icon_name = icon;
-        this._linkKind.text = kind;
+        this._linkKind.text = t === (this._fromPhone ?? '').trim() ? 'FROM PHONE' : kind;
         this._linkText.text = shown;
         this._linkActions.destroy_all_children();
         for (const [label, primary, run] of actions) {
@@ -1431,6 +1869,10 @@ class Island extends St.Widget {
             GLib.source_remove(this._relayoutId);
         this._timeline?.stop();
         this._timeline = null;
+        if (this._btSub)
+            Gio.DBus.system.signal_unsubscribe(this._btSub);
+        this._dbus?.unexport();
+        this._dbus = null;
         this._privacy?.destroy();
         this._privacy = null;
         this._mpris?.destroy();

@@ -1,14 +1,16 @@
 /* ---------- the pill ---------- */
 .ci-island {
-  /* liquid glass: translucent tint over a blurred backdrop, bright rim */
+  /* Origin Island dark glass: a deep, mostly opaque body (so what's behind
+     never competes with the text), lighter at the top like frosted glass,
+     a hairline rim and a soft shadow for depth. */
   background-gradient-direction: vertical;
-  background-gradient-start: rgba(70, 70, 78, 0.78);
-  background-gradient-end: rgba(8, 8, 12, 0.90);
+  background-gradient-start: rgba(30, 30, 36, 0.94);
+  background-gradient-end: rgba(4, 4, 6, 0.97);
   color: #ffffff;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.40),
-              inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45),
+              inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .ci-view { spacing: 10px; }
@@ -128,3 +130,29 @@
 }
 .ci-close:hover { background-color: rgba(255, 255, 255, 0.20); color: #ffffff; }
 .ci-close:active { background-color: rgba(255, 255, 255, 0.28); }
+
+/* ---------- notification: app badge + the app's own buttons ---------- */
+.ci-notif-badge {
+  border-radius: 999px;
+  background-color: #000000;
+  border: 2px solid #000000;
+}
+.ci-notif-actions { spacing: 8px; margin-top: 8px; }
+.ci-notif-action {
+  padding: 5px 14px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 9pt;
+}
+.ci-notif-action:hover { background-color: rgba(255, 255, 255, 0.24); }
+.ci-notif-action:active { background-color: rgba(255, 255, 255, 0.32); }
+.ci-notif-action-primary { background-color: rgba(10, 132, 255, 0.90); border: 1px solid rgba(255, 255, 255, 0.30); }
+.ci-notif-action-primary:hover { background-color: #409cff; }
+.ci-notif-action-primary:active { background-color: #0060df; }
+
+/* ---------- file transfer (Notify Bridge) ---------- */
+.ci-xfer-speed { color: #8e8e93; font-size: 8.5pt; font-feature-settings: "tnum"; }
+.ci-status-value { font-weight: 600; font-size: 10pt; }
