@@ -143,8 +143,8 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             pixels('max-radius', 'Corner roundness', '0 is square, 30 is fully round', 0, 40, 1),
         ]);
         group(look, 'Music', null, [
-            toggle('hide-browser-media', 'Hide browser videos',
-                'Don’t show YouTube and other videos playing in Firefox, Chrome and other browsers'),
+            toggle('hide-videos', 'Sound only, no video',
+                'Hide YouTube and other browser videos, video player apps and video files'),
             text('media-players', 'Only these apps (optional)'),
         ]);
         group(look, 'Motion', null, [

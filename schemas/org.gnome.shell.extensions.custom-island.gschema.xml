@@ -49,10 +49,10 @@
 
     <!-- media -->
     <key name="media-players" type="s"><default>''</default>
-      <summary>Apps whose music shows in the island, comma separated (e.g. "spotify, rhythmbox"). Empty shows every player, including browser videos</summary></key>
+      <summary>Apps whose music shows in the island, comma separated (e.g. "spotify, rhythmbox"). Empty shows every player</summary></key>
 
-    <key name="hide-browser-media" type="b"><default>false</default>
-      <summary>Don't show videos and sound playing in web browsers (YouTube etc.), only music apps</summary></key>
+    <key name="hide-videos" type="b"><default>true</default>
+      <summary>Show only sound, not video: hides web browsers (YouTube etc.), video player apps and video files</summary></key>
 
     <!-- notifications -->
     <key name="suppress-gnome-banners" type="b"><default>true</default>

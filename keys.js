@@ -25,7 +25,7 @@ export const KEYS = {
 
     // media
     'media-players':         {config: 'MEDIA_PLAYERS', type: 's', rebuild: true},
-    'hide-browser-media':    {config: 'HIDE_BROWSER_MEDIA', type: 'b', rebuild: true},
+    'hide-videos':           {config: 'HIDE_VIDEOS', type: 'b', rebuild: true},
 
     // notifications
     'suppress-gnome-banners': {config: 'SUPPRESS_GNOME_BANNERS', type: 'b', rebuild: true},

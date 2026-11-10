@@ -10,10 +10,16 @@ const ROOT_IFACE = 'org.mpris.MediaPlayer2';
 const PLAYER_IFACE = 'org.mpris.MediaPlayer2.Player';
 // playerctld mirrors other players; showing it would duplicate them.
 const IGNORED = ['playerctld'];
-// Browsers register a player for every tab playing a video.
+// "Sound only" mode hides anything that is almost always video. MPRIS has no
+// audio/video flag, so this goes by app and file type:
+//   browsers register a player for every tab playing a video (YouTube etc.),
+//   video player apps, and video files opened in any player (VLC, mpv, ...).
 const BROWSERS = ['firefox', 'chromium', 'chrome', 'brave', 'edge', 'msedge', 'vivaldi',
     'opera', 'epiphany', 'librewolf', 'zen', 'floorp', 'waterfox', 'yandex',
     'plasma-browser-integration'];
+const VIDEO_APPS = ['totem', 'videos', 'celluloid', 'haruna', 'showtime', 'clapper',
+    'smplayer', 'dragonplayer', 'parole', 'kodi', 'stremio', 'jellyfin'];
+const VIDEO_FILE = /\.(mp4|m4v|mkv|webm|avi|mov|wmv|flv|mpe?g|ts|m2ts|3gp|ogv)(\?|#|$)/i;
 
 class Player {
     constructor(busName, onChange) {
@@ -76,6 +82,10 @@ class Player {
     get artist() {
         const a = this.metadata['xesam:artist'];
         return Array.isArray(a) ? a.join(', ') : (a ?? '');
+    }
+
+    get url() {
+        return this.metadata['xesam:url'] ?? '';
     }
 
     get artUrl() {
@@ -147,10 +157,10 @@ class Player {
 export class MprisWatcher {
     // allowed: comma separated app names ("spotify, rhythmbox"); empty (the
     // default) allows every player.
-    // hideBrowsers: skip web browsers (videos in tabs).
-    constructor(onUpdate, {allowed = '', hideBrowsers = false} = {}) {
+    // hideVideos: sound only (skip browsers, video apps and video files).
+    constructor(onUpdate, {allowed = '', hideVideos = true} = {}) {
         this._onUpdate = onUpdate;
-        this._hideBrowsers = hideBrowsers;
+        this._hideVideos = hideVideos;
         this._allowed = String(allowed ?? '').toLowerCase()
             .split(',').map(s => s.trim()).filter(Boolean);
         this._players = new Map();
@@ -204,11 +214,16 @@ export class MprisWatcher {
     _isAllowed(p) {
         const bus = p.busName.slice(MPRIS_PREFIX.length).toLowerCase().split('.')[0];
         const id = (p.identity || '').toLowerCase();
-        if (this._hideBrowsers && BROWSERS.some(b => bus.includes(b) || id.includes(b)))
+        if (this._hideVideos && this._isVideo(p, bus, id))
             return false;
         if (!this._allowed.length)
             return true;
         return this._allowed.some(a => bus === a || id === a);
+    }
+
+    _isVideo(p, bus, id) {
+        const name = n => bus.includes(n) || id.includes(n);
+        return BROWSERS.some(name) || VIDEO_APPS.some(name) || VIDEO_FILE.test(p.url);
     }
 
     // The player the island should show, or null.
