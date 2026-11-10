@@ -121,7 +121,8 @@ Most often this is an unsupported GNOME version. Check yours with `gnome-shell -
 
 ```sh
 gnome-extensions pack --force \
-  --extra-source=island.js --extra-source=keys.js --extra-source=mpris.js
+  --extra-source=island.js --extra-source=keys.js --extra-source=mpris.js \
+  --extra-source=privacy.js
 ```
 
 This creates `custom-island@hemanth.shell-extension.zip`. Install it with `gnome-extensions install --force <zip>`, or upload it to extensions.gnome.org.
