@@ -47,6 +47,13 @@
     <key name="hover-collapse-ms" type="i"><range min="0" max="3000"/><default>380</default>
       <summary>Time before the player collapses after the pointer leaves</summary></key>
 
+    <!-- media -->
+    <key name="media-players" type="s"><default>''</default>
+      <summary>Apps whose music shows in the island, comma separated (e.g. "spotify, rhythmbox"). Empty shows every player, including browser videos</summary></key>
+
+    <key name="hide-browser-media" type="b"><default>false</default>
+      <summary>Don't show videos and sound playing in web browsers (YouTube etc.), only music apps</summary></key>
+
     <!-- notifications -->
     <key name="suppress-gnome-banners" type="b"><default>true</default>
       <summary>Stop GNOME notification banners and show them in Custom Island instead</summary></key>

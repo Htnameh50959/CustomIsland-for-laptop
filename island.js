@@ -33,6 +33,8 @@ import {PrivacyMonitor} from './privacy.js';
 // ---------------------------------------------------------------- settings --
 // Defaults only: extension.js fills these from GSettings (see keys.js / prefs.js).
 export const CONFIG = {
+    MEDIA_PLAYERS: '',            // comma separated apps to show; empty = every player
+    HIDE_BROWSER_MEDIA: false,    // skip browser tabs (YouTube videos etc.)
     SUPPRESS_GNOME_OSD: true,     // show volume/brightness only in the island
     SUPPRESS_GNOME_BANNERS: true, // show notifications only in the island
     NOTIF_SHOW_LOW_URGENCY: true, // also show apps' "low priority" notifications
@@ -241,7 +243,10 @@ class Island extends St.Widget {
         this._setupDnd();
         this._setupClipboard();
         this._setupPrivacy();
-        this._mpris = new MprisWatcher(() => this._onPlayersChanged());
+        this._mpris = new MprisWatcher(() => this._onPlayersChanged(), {
+            allowed: CONFIG.MEDIA_PLAYERS,
+            hideBrowsers: CONFIG.HIDE_BROWSER_MEDIA,
+        });
 
         Main.layoutManager.connectObject('monitors-changed', () => {
             if (this.width)

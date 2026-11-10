@@ -10,6 +10,10 @@ const ROOT_IFACE = 'org.mpris.MediaPlayer2';
 const PLAYER_IFACE = 'org.mpris.MediaPlayer2.Player';
 // playerctld mirrors other players; showing it would duplicate them.
 const IGNORED = ['playerctld'];
+// Browsers register a player for every tab playing a video.
+const BROWSERS = ['firefox', 'chromium', 'chrome', 'brave', 'edge', 'msedge', 'vivaldi',
+    'opera', 'epiphany', 'librewolf', 'zen', 'floorp', 'waterfox', 'yandex',
+    'plasma-browser-integration'];
 
 class Player {
     constructor(busName, onChange) {
@@ -40,8 +44,11 @@ class Player {
 
         // Human readable name ("Spotify", "Firefox", ...)
         this._dbusGet(ROOT_IFACE, 'Identity', v => {
-            if (typeof v === 'string' && v)
+            if (typeof v === 'string' && v) {
                 this.identity = v;
+                if (this._proxy)
+                    this._onChange(this); // the allow-list may match on this name
+            }
         });
     }
 
@@ -138,8 +145,14 @@ class Player {
 }
 
 export class MprisWatcher {
-    constructor(onUpdate) {
+    // allowed: comma separated app names ("spotify, rhythmbox"); empty (the
+    // default) allows every player.
+    // hideBrowsers: skip web browsers (videos in tabs).
+    constructor(onUpdate, {allowed = '', hideBrowsers = false} = {}) {
         this._onUpdate = onUpdate;
+        this._hideBrowsers = hideBrowsers;
+        this._allowed = String(allowed ?? '').toLowerCase()
+            .split(',').map(s => s.trim()).filter(Boolean);
         this._players = new Map();
         this._cancellable = new Gio.Cancellable();
 
@@ -186,10 +199,22 @@ export class MprisWatcher {
         this._onUpdate();
     }
 
+    // Matches the bus name (org.mpris.MediaPlayer2.spotify) or the app's
+    // Identity ("Spotify"), ignoring case.
+    _isAllowed(p) {
+        const bus = p.busName.slice(MPRIS_PREFIX.length).toLowerCase().split('.')[0];
+        const id = (p.identity || '').toLowerCase();
+        if (this._hideBrowsers && BROWSERS.some(b => bus.includes(b) || id.includes(b)))
+            return false;
+        if (!this._allowed.length)
+            return true;
+        return this._allowed.some(a => bus === a || id === a);
+    }
+
     // The player the island should show, or null.
     get active() {
         const candidates = [...this._players.values()]
-            .filter(p => p.ready && p.status !== 'Stopped' && p.title);
+            .filter(p => p.ready && p.status !== 'Stopped' && p.title && this._isAllowed(p));
         if (!candidates.length)
             return null;
         const playing = candidates.filter(p => p.status === 'Playing');

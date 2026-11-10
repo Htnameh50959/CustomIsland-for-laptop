@@ -23,6 +23,10 @@ export const KEYS = {
     'hover-expand-ms':       {config: 'HOVER_EXPAND_MS', type: 'i'},
     'hover-collapse-ms':     {config: 'HOVER_COLLAPSE_MS', type: 'i'},
 
+    // media
+    'media-players':         {config: 'MEDIA_PLAYERS', type: 's', rebuild: true},
+    'hide-browser-media':    {config: 'HIDE_BROWSER_MEDIA', type: 'b', rebuild: true},
+
     // notifications
     'suppress-gnome-banners': {config: 'SUPPRESS_GNOME_BANNERS', type: 'b', rebuild: true},
     'notif-ms':               {config: 'NOTIF_MS', type: 'i'},

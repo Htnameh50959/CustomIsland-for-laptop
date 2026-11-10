@@ -88,6 +88,18 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             handlerIds.push(settings.connect('changed::position', sync));
         };
 
+        // Text field for a string key, saved when Enter is pressed or focus leaves.
+        const text = (key, title) => {
+            const row = new Adw.EntryRow({title, show_apply_button: true});
+            row.text = settings.get_string(key);
+            row.connect('apply', () => settings.set_string(key, row.text.trim()));
+            handlerIds.push(settings.connect(`changed::${key}`, () => {
+                if (row.text.trim() !== settings.get_string(key))
+                    row.text = settings.get_string(key);
+            }));
+            return row;
+        };
+
         // ------------------------------------------------------ page: Look --
         const look = new Adw.PreferencesPage({
             title: 'Look', icon_name: 'preferences-desktop-appearance-symbolic',
@@ -129,6 +141,11 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
             pixels('notif-width', 'Event maximum width', 'Notifications and Copy & Go', 260, 640, 10),
             pixels('notif-gap', 'Notification gap', 'Extra padding inside notifications', 0, 60, 1),
             pixels('max-radius', 'Corner roundness', '0 is square, 30 is fully round', 0, 40, 1),
+        ]);
+        group(look, 'Music', null, [
+            toggle('hide-browser-media', 'Hide browser videos',
+                'Don’t show YouTube and other videos playing in Firefox, Chrome and other browsers'),
+            text('media-players', 'Only these apps (optional)'),
         ]);
         group(look, 'Motion', null, [
             seconds('spring-ms', 'Animation length', 'Seconds — lower is snappier', 0.15, 1.5, 0.05, 2),
