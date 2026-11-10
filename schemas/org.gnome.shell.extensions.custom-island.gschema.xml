@@ -56,7 +56,7 @@
 
     <!-- notifications -->
     <key name="suppress-gnome-banners" type="b"><default>true</default>
-      <summary>Stop GNOME notification banners and show them in Custom Island instead</summary></key>
+      <summary>Stop GNOME notification banners and show them in Custom Island instead (they stay in the notification list)</summary></key>
     <key name="notif-ms" type="i"><range min="1000" max="30000"/><default>4500</default>
       <summary>How long each notification stays, in milliseconds</summary></key>
     <key name="notif-queue-max" type="i"><range min="1" max="100"/><default>20</default>

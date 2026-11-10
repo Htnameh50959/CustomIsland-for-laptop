@@ -12,7 +12,7 @@ Works on GNOME Shell 46, 47 and 48 (Ubuntu 24.04 and newer, Fedora 40 and newer)
 | Timer & stopwatch | Clock / timer notifications stay as a live activity until they finish. |
 | Navigation | Maps / navigation notifications stay until the route ends. |
 | Call status | Phone / call notifications stay on the island while the call is active. |
-| Notifications | Show the sender's picture with the app's icon on its corner. Click to expand (Clear, Open and the app's own buttons), click again to open the app; right-click for the controls. Notifications that arrive together wait their turn ("· 2 MORE"); scroll over the island to skip to the next. Turn on **Stop GNOME banners** so they only appear in the Island. |
+| Notifications | Show the sender's picture with the app's icon on its corner. Click to expand (Clear, Open and the app's own buttons), click again to open the app; right-click for the controls. Notifications that arrive together wait their turn ("· 2 MORE"); scroll over the island to skip to the next. Turn on **Stop GNOME banners** so they pop up only in the Island; they still stay in the notification list under the clock, and clearing one in the Island clears it there too. |
 | Copy & Go | Recognises copied links, emails and phone numbers and offers **Open**, **Write**, **Call / Message / New contact**, or **Search / Translate**. Passwords are shown as dots. |
 | Smart suggestions | Action buttons for whatever you just copied. |
 | Volume / brightness | Replaces GNOME's OSD pop-up. |
@@ -93,7 +93,7 @@ Most often this is an unsupported GNOME version. Check yours with `gnome-shell -
 
 **The island is there but I don't see it.** With "Float below the top bar" and "Hide when there's nothing to show" on, it only appears when something happens. Play some music or copy a link to test it.
 
-**Notifications don't show.** Check that Do Not Disturb is off, or turn off "Respect Do Not Disturb" in the settings. To hide GNOME's own banners, keep **Stop GNOME banners — show notifications in the Island** on.
+**Notifications don't show.** Check that Do Not Disturb is off, or turn off "Respect Do Not Disturb" in the settings. To hide GNOME's own banners, keep **Stop GNOME banners — show notifications in the Island** on. Only the pop-up is hidden: notifications still collect in the list under the clock.
 
 **Copy & Go doesn't show.** Skipped while a fullscreen app is in front. Make sure **Copy & Go smart suggestions** is on in **Settings → Volume & more**.
 

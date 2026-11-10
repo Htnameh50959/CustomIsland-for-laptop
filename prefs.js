@@ -160,7 +160,7 @@ export default class CustomIslandPrefs extends ExtensionPreferences {
         });
         group(notif, 'Where they appear', null, [
             toggle('suppress-gnome-banners', 'Stop GNOME banners — show notifications in the Island',
-                'Hides system notification banners while Custom Island is active, so they only appear here. Protected system prompts can still appear.'),
+                'Hides system notification banners while Custom Island is active, so they pop up only here. Notifications stay in the notification list under the clock. Protected system prompts can still appear.'),
         ]);
         group(notif, 'Which ones', 'Live activities (calls, navigation, timers) stay until they finish. Phone notifications from Notify Bridge count as normal notifications', [
             toggle('notif-respect-dnd', 'Respect Do Not Disturb',
