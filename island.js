@@ -292,6 +292,10 @@ class Island extends St.Widget {
         const t = l.clutter_text;
         t.line_wrap = true;
         t.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+        // St.Label ellipsizes by default. Wrap + ellipsize lets Clutter squeeze the
+        // label to its first line ("…") while the pill is still sized for every
+        // line, so long (phone) notifications showed half the text over empty space.
+        t.ellipsize = Pango.EllipsizeMode.NONE;
         return l;
     }
 
